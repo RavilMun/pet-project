@@ -1,0 +1,194 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-inbox-items
+      author: codex
+      changes:
+        - createTable:
+            tableName: inbox_items
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: raw_text
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(255)
+              - column:
+                  name: summary
+                  type: text
+              - column:
+                  name: type
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: priority
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actionable
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ai_metadata
+                  type: jsonb
+              - column:
+                  name: processed_at
+                  type: timestamp with time zone
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: inbox_items
+            indexName: idx_inbox_items_created_at
+            columns:
+              - column:
+                  name: created_at
+        - createIndex:
+            tableName: inbox_items
+            indexName: idx_inbox_items_status
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            tableName: inbox_items
+            indexName: idx_inbox_items_type
+            columns:
+              - column:
+                  name: type
+
+  - changeSet:
+      id: 002-create-inbox-item-tags
+      author: codex
+      changes:
+        - createTable:
+            tableName: inbox_item_tags
+            columns:
+              - column:
+                  name: item_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tag
+                  type: varchar(128)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: inbox_item_tags
+            baseColumnNames: item_id
+            referencedTableName: inbox_items
+            referencedColumnNames: id
+            constraintName: fk_inbox_item_tags_item
+            onDelete: CASCADE
+        - addPrimaryKey:
+            tableName: inbox_item_tags
+            columnNames: item_id, tag
+            constraintName: pk_inbox_item_tags
+        - createIndex:
+            tableName: inbox_item_tags
+            indexName: idx_inbox_item_tags_tag
+            columns:
+              - column:
+                  name: tag
+
+  - changeSet:
+      id: 003-create-inbox-item-links
+      author: codex
+      changes:
+        - createTable:
+            tableName: inbox_item_links
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: item_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: url
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: domain
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: inbox_item_links
+            baseColumnNames: item_id
+            referencedTableName: inbox_items
+            referencedColumnNames: id
+            constraintName: fk_inbox_item_links_item
+            onDelete: CASCADE
+        - createIndex:
+            tableName: inbox_item_links
+            indexName: idx_inbox_item_links_item_id
+            columns:
+              - column:
+                  name: item_id
+        - createIndex:
+            tableName: inbox_item_links
+            indexName: idx_inbox_item_links_domain
+            columns:
+              - column:
+                  name: domain
+
+  - changeSet:
+      id: 004-add-telegram-metadata-to-inbox-items
+      author: codex
+      changes:
+        - addColumn:
+            tableName: inbox_items
+            columns:
+              - column:
+                  name: telegram_chat_id
+                  type: bigint
+              - column:
+                  name: telegram_message_id
+                  type: bigint
+        - createIndex:
+            tableName: inbox_items
+            indexName: idx_inbox_items_telegram_chat_created_at
+            columns:
+              - column:
+                  name: telegram_chat_id
+              - column:
+                  name: created_at
