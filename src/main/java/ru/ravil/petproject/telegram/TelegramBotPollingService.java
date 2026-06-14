@@ -13,14 +13,17 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import ru.ravil.petproject.config.TelegramBotProperties;
+import ru.ravil.petproject.config.TelegramIntentMode;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.service.AiProcessingUnavailableException;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
+import ru.ravil.petproject.service.MemoryAnswerService;
 
 @Service
 @ConditionalOnProperty(prefix = "telegram.bot", name = "enabled", havingValue = "true")
@@ -37,6 +40,7 @@ public class TelegramBotPollingService {
     private final AiTelegramIntentDetector aiTelegramIntentDetector;
     private final TelegramSearchResponseFormatter searchResponseFormatter;
     private final InboxItemEmbeddingBackfillService embeddingBackfillService;
+    private final MemoryAnswerService memoryAnswerService;
     private final AtomicBoolean polling = new AtomicBoolean(false);
     private final AtomicLong nextOffset = new AtomicLong(0);
 
@@ -49,7 +53,8 @@ public class TelegramBotPollingService {
             RuleBasedTelegramIntentDetector ruleBasedTelegramIntentDetector,
             AiTelegramIntentDetector aiTelegramIntentDetector,
             TelegramSearchResponseFormatter searchResponseFormatter,
-            InboxItemEmbeddingBackfillService embeddingBackfillService
+            InboxItemEmbeddingBackfillService embeddingBackfillService,
+            MemoryAnswerService memoryAnswerService
     ) {
         this.telegramApiClient = telegramApiClient;
         this.properties = properties;
@@ -60,6 +65,7 @@ public class TelegramBotPollingService {
         this.aiTelegramIntentDetector = aiTelegramIntentDetector;
         this.searchResponseFormatter = searchResponseFormatter;
         this.embeddingBackfillService = embeddingBackfillService;
+        this.memoryAnswerService = memoryAnswerService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -123,14 +129,8 @@ public class TelegramBotPollingService {
             return;
         }
 
-        TelegramIntent intent = commandTelegramIntentDetector.detect(normalizedText);
-        if (intent.isUnknown()) {
-            intent = ruleBasedTelegramIntentDetector.detect(normalizedText);
-        }
-        if (intent.isUnknown()) {
-            intent = aiTelegramIntentDetector.detect(normalizedText);
-        }
-        if (!intent.isUnknown() && handleIntent(chatId, intent)) {
+        TelegramIntent intent = detectIntent(normalizedText);
+        if (!intent.isUnknown() && handleIntent(chatId, normalizedText, intent)) {
             return;
         }
 
@@ -154,7 +154,37 @@ public class TelegramBotPollingService {
         }
     }
 
-    private boolean handleIntent(long chatId, TelegramIntent intent) {
+    private TelegramIntent detectIntent(String text) {
+        TelegramIntent commandIntent = commandTelegramIntentDetector.detect(text);
+        if (!commandIntent.isUnknown()) {
+            return commandIntent;
+        }
+
+        TelegramIntentMode intentMode = properties.intentMode();
+        return switch (intentMode) {
+            case COMMAND_ONLY -> TelegramIntent.unknown();
+            case HYBRID_SAFE -> detectHybridSafeIntent(text);
+            case AI_FIRST -> detectAiFirstIntent(text);
+        };
+    }
+
+    private TelegramIntent detectHybridSafeIntent(String text) {
+        TelegramIntent intent = ruleBasedTelegramIntentDetector.detect(text);
+        if (intent.isUnknown()) {
+            intent = aiTelegramIntentDetector.detect(text);
+        }
+        return intent;
+    }
+
+    private TelegramIntent detectAiFirstIntent(String text) {
+        TelegramIntent intent = aiTelegramIntentDetector.detectAny(text);
+        if (intent.isUnknown()) {
+            intent = ruleBasedTelegramIntentDetector.detect(text);
+        }
+        return intent;
+    }
+
+    private boolean handleIntent(long chatId, String originalText, TelegramIntent intent) {
         return switch (intent.type()) {
             case HELP -> {
                 telegramApiClient.sendMessage(chatId, "Можешь просто писать заметки, ссылки и идеи.\nПримеры:\nнайди кресло\nпокажи последние\nчто я добавлял сегодня");
@@ -169,14 +199,21 @@ public class TelegramBotPollingService {
                 yield true;
             }
             case SEARCH -> {
-                List<InboxItemResponse> items = inboxItemSearchService.search(
+                List<MemoryUnitResponse> items = inboxItemSearchService.search(
                         intent.query(),
                         intent.itemTypes(),
                         intent.tags(),
                         intent.period(),
                         10
                 );
-                telegramApiClient.sendMessage(chatId, searchResponseFormatter.format(intent.query(), items));
+                telegramApiClient.sendMessage(
+                        chatId,
+                        searchResponseFormatter.format(
+                                StringUtils.hasText(intent.query()) ? intent.query() : originalText,
+                                items,
+                                memoryAnswerService.answer(originalText, items)
+                        )
+                );
                 yield true;
             }
             case UNKNOWN, CAPTURE -> false;

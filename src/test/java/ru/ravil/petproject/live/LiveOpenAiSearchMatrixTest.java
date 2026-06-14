@@ -23,7 +23,9 @@ import ru.ravil.petproject.domain.InboxItemPriority;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemStatus;
 import ru.ravil.petproject.domain.InboxItemType;
-import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.domain.MemoryUnitType;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.repository.InboxItemRepository;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
@@ -84,28 +86,28 @@ class LiveOpenAiSearchMatrixTest {
     @ParameterizedTest(name = "{index}: {0}")
     @MethodSource("scenarios")
     void searchMatrix(String label, String query, String expectedFirstRawText) {
-        List<InboxItemResponse> results = inboxItemSearchService.search(query, Set.of(), Set.of(), SearchPeriod.ALL, LIMIT);
+        List<MemoryUnitResponse> results = inboxItemSearchService.search(query, Set.of(), Set.of(), SearchPeriod.ALL, LIMIT);
 
         assertThat(results)
                 .as(label)
                 .isNotEmpty();
         assertThat(results)
                 .as(label)
-                .extracting(InboxItemResponse::rawText)
+                .extracting(MemoryUnitResponse::sourceRawText)
                 .contains(expectedFirstRawText);
     }
 
     @ParameterizedTest(name = "{index}: {0}")
     @MethodSource("extendedScenarios")
     void extendedSearchMatrix(String label, String query, String expectedFirstRawText) {
-        List<InboxItemResponse> results = inboxItemSearchService.search(query, Set.of(), Set.of(), SearchPeriod.ALL, LIMIT);
+        List<MemoryUnitResponse> results = inboxItemSearchService.search(query, Set.of(), Set.of(), SearchPeriod.ALL, LIMIT);
 
         assertThat(results)
                 .as(label)
                 .isNotEmpty();
         assertThat(results)
                 .as(label)
-                .extracting(InboxItemResponse::rawText)
+                .extracting(MemoryUnitResponse::sourceRawText)
                 .contains(expectedFirstRawText);
     }
 
@@ -860,10 +862,25 @@ class LiveOpenAiSearchMatrixTest {
         item.setStatus(InboxItemStatus.PROCESSED);
         item.setPriority(InboxItemPriority.MEDIUM);
         item.setTags(tags);
+        MemoryUnit unit = new MemoryUnit(item, toMemoryUnitType(type), title);
+        unit.setSummary(summary);
+        unit.setSourceQuote(rawText);
+        unit.setTags(tags);
+        unit.setActionable(type == InboxItemType.TASK || type == InboxItemType.REMINDER);
+        unit.setConfidence(1.0d);
+        item.addMemoryUnit(unit);
         InboxItem saved = inboxItemRepository.saveAndFlush(item);
         if (createdAt != null) {
             saved.setCreatedAt(createdAt);
             inboxItemRepository.saveAndFlush(saved);
+        }
+    }
+
+    private static MemoryUnitType toMemoryUnitType(InboxItemType type) {
+        try {
+            return MemoryUnitType.valueOf(type.name());
+        } catch (IllegalArgumentException exception) {
+            return MemoryUnitType.NOTE;
         }
     }
 

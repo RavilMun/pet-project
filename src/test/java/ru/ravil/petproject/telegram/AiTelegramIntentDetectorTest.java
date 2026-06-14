@@ -27,6 +27,23 @@ class AiTelegramIntentDetectorTest {
     }
 
     @Test
+    void detectAnyCallsAiForRegularNote() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "intent": "CAPTURE",
+                  "query": "",
+                  "tags": [],
+                  "period": "ALL"
+                }
+                """);
+
+        TelegramIntent intent = detector.detectAny("вчера вечером читал статью про pgvector");
+
+        assertThat(intent.type()).isEqualTo(TelegramIntentType.CAPTURE);
+    }
+
+    @Test
     void returnsUnknownWhenClientIsUnavailable() {
         when(openAiClientProvider.getIfAvailable()).thenReturn(null);
 

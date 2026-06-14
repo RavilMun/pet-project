@@ -27,8 +27,10 @@ import ru.ravil.petproject.domain.InboxItemPriority;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemStatus;
 import ru.ravil.petproject.domain.InboxItemType;
+import ru.ravil.petproject.domain.MemoryUnitType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.dto.UpdateInboxItemRequest;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
@@ -134,12 +136,12 @@ class InboxItemControllerTest {
     @Test
     void searchUsesRawQueryWhenNaturalLanguageParserDoesNotRecognizeIntent() throws Exception {
         when(searchQueryParser.parse("kafka")).thenReturn(SearchQuery.unknown());
-        when(inboxItemSearchService.search("kafka", 10)).thenReturn(List.of(response("Посмотреть доклад про Kafka")));
+        when(inboxItemSearchService.search("kafka", 10)).thenReturn(List.of(memoryResponse("Посмотреть доклад про Kafka")));
 
         mockMvc.perform(get("/api/inbox-items/search").param("q", "kafka"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].rawText").value("Посмотреть доклад про Kafka"));
+                .andExpect(jsonPath("$[0].sourceRawText").value("Посмотреть доклад про Kafka"));
 
         verify(inboxItemSearchService).search("kafka", 10);
     }
@@ -149,12 +151,12 @@ class InboxItemControllerTest {
         when(searchQueryParser.parse("какие фильмы я сохранил сегодня"))
                 .thenReturn(SearchQuery.search("фильмы", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.TODAY));
         when(inboxItemSearchService.search("фильмы", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.TODAY, 10))
-                .thenReturn(List.of(response("Хочу посмотреть фильм Мгла")));
+                .thenReturn(List.of(memoryResponse("Хочу посмотреть фильм Мгла")));
 
         mockMvc.perform(get("/api/inbox-items/search").param("q", "какие фильмы я сохранил сегодня"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].rawText").value("Хочу посмотреть фильм Мгла"));
+                .andExpect(jsonPath("$[0].sourceRawText").value("Хочу посмотреть фильм Мгла"));
 
         verify(inboxItemSearchService).search("фильмы", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.TODAY, 10);
     }
@@ -162,16 +164,16 @@ class InboxItemControllerTest {
     @Test
     void searchCanRouteRecentRequests() throws Exception {
         when(searchQueryParser.parse("покажи последние")).thenReturn(SearchQuery.recent());
-        when(inboxItemService.listRecent(5)).thenReturn(List.of(response("first")));
+        when(inboxItemSearchService.recent(5)).thenReturn(List.of(memoryResponse("first")));
 
         mockMvc.perform(get("/api/inbox-items/search")
                         .param("q", "покажи последние")
                         .param("limit", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].rawText").value("first"));
+                .andExpect(jsonPath("$[0].sourceRawText").value("first"));
 
-        verify(inboxItemService).listRecent(5);
+        verify(inboxItemSearchService).recent(5);
     }
 
     @Test
@@ -263,6 +265,28 @@ class InboxItemControllerTest {
                 null,
                 OffsetDateTime.parse("2026-06-12T11:00:00Z"),
                 OffsetDateTime.parse("2026-06-12T11:00:00Z")
+        );
+    }
+
+    private static MemoryUnitResponse memoryResponse(String sourceRawText) {
+        OffsetDateTime dateTime = OffsetDateTime.parse("2026-06-12T11:00:00Z");
+        return new MemoryUnitResponse(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                sourceRawText,
+                sourceRawText,
+                null,
+                MemoryUnitType.NOTE,
+                Set.of(),
+                Set.of(),
+                false,
+                1.0,
+                sourceRawText,
+                null,
+                null,
+                dateTime,
+                dateTime,
+                dateTime
         );
     }
 }

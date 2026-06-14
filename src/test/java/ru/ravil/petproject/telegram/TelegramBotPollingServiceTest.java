@@ -20,16 +20,21 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import ru.ravil.petproject.config.TelegramBotProperties;
+import ru.ravil.petproject.config.TelegramIntentMode;
 import ru.ravil.petproject.domain.InboxItemPriority;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemStatus;
 import ru.ravil.petproject.domain.InboxItemType;
+import ru.ravil.petproject.domain.MemoryUnitType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.service.AiProcessingUnavailableException;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
+import ru.ravil.petproject.service.MemoryAnswer;
+import ru.ravil.petproject.service.MemoryAnswerService;
 import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
 import ru.ravil.petproject.service.SearchPeriod;
 
@@ -39,6 +44,7 @@ class TelegramBotPollingServiceTest {
     private InboxItemService inboxItemService;
     private InboxItemSearchService inboxItemSearchService;
     private InboxItemEmbeddingBackfillService embeddingBackfillService;
+    private MemoryAnswerService memoryAnswerService;
     private AiTelegramIntentDetector aiTelegramIntentDetector;
 
     @BeforeEach
@@ -47,8 +53,11 @@ class TelegramBotPollingServiceTest {
         inboxItemService = Mockito.mock(InboxItemService.class);
         inboxItemSearchService = Mockito.mock(InboxItemSearchService.class);
         embeddingBackfillService = Mockito.mock(InboxItemEmbeddingBackfillService.class);
+        memoryAnswerService = Mockito.mock(MemoryAnswerService.class);
         aiTelegramIntentDetector = Mockito.mock(AiTelegramIntentDetector.class);
         when(aiTelegramIntentDetector.detect(anyString())).thenReturn(TelegramIntent.unknown());
+        when(aiTelegramIntentDetector.detectAny(anyString())).thenReturn(TelegramIntent.unknown());
+        when(memoryAnswerService.answer(anyString(), any())).thenReturn(Optional.empty());
     }
 
     @Test
@@ -70,6 +79,28 @@ class TelegramBotPollingServiceTest {
         org.assertj.core.api.Assertions.assertThat(request.telegramMessageId()).isEqualTo(1);
         org.assertj.core.api.Assertions.assertThat(request.tags()).isEmpty();
         verify(telegramApiClient).sendMessage(42, "Сохранил: remember docs\nТип: NOTE");
+    }
+
+    @Test
+    void pollSavesStatementWithAboutWordInsteadOfSearching() {
+        TelegramBotPollingService service = service(null);
+        String text = "Вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search";
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, text)));
+        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response(text));
+
+        service.poll();
+
+        ArgumentCaptor<CreateInboxItemRequest> captor = ArgumentCaptor.forClass(CreateInboxItemRequest.class);
+        verify(inboxItemService).create(captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().rawText()).isEqualTo(text);
+        verify(inboxItemSearchService, never()).search(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(telegramApiClient).sendMessage(42, "Сохранил: " + text.substring(0, 77) + "...\nТип: NOTE");
     }
 
     @Test
@@ -160,7 +191,7 @@ class TelegramBotPollingServiceTest {
     void pollReturnsSearchResults() {
         TelegramBotPollingService service = service(null);
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "/search pgvector")));
-        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10)).thenReturn(List.of(response("learn pgvector")));
+        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10)).thenReturn(List.of(memoryResponse("learn pgvector")));
 
         service.poll();
 
@@ -173,7 +204,7 @@ class TelegramBotPollingServiceTest {
     void pollReturnsSearchResultsForNaturalLanguageSearch() {
         TelegramBotPollingService service = service(null);
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "найди pgvector")));
-        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10)).thenReturn(List.of(response("learn pgvector")));
+        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10)).thenReturn(List.of(memoryResponse("learn pgvector")));
 
         service.poll();
 
@@ -183,10 +214,92 @@ class TelegramBotPollingServiceTest {
     }
 
     @Test
+    void commandOnlyModeSavesNaturalLanguageSearchAsNote() {
+        TelegramBotPollingService service = service(null, TelegramIntentMode.COMMAND_ONLY);
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "найди pgvector")));
+        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response("найди pgvector"));
+
+        service.poll();
+
+        verify(inboxItemSearchService, never()).search(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(aiTelegramIntentDetector, never()).detect(anyString());
+        verify(inboxItemService).create(any(CreateInboxItemRequest.class));
+        verify(telegramApiClient).sendMessage(42, "Сохранил: найди pgvector\nТип: NOTE");
+    }
+
+    @Test
+    void commandOnlyModeStillSupportsExplicitSearchCommand() {
+        TelegramBotPollingService service = service(null, TelegramIntentMode.COMMAND_ONLY);
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "/search pgvector")));
+        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10))
+                .thenReturn(List.of(memoryResponse("learn pgvector")));
+
+        service.poll();
+
+        verify(inboxItemSearchService).search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        verify(inboxItemService, never()).create(any(CreateInboxItemRequest.class));
+    }
+
+    @Test
+    void hybridSafeModeUsesRulesBeforeAi() {
+        TelegramBotPollingService service = service(null, TelegramIntentMode.HYBRID_SAFE);
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "найди pgvector")));
+        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10))
+                .thenReturn(List.of(memoryResponse("learn pgvector")));
+
+        service.poll();
+
+        verify(aiTelegramIntentDetector, never()).detect(anyString());
+        verify(inboxItemSearchService).search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+    }
+
+    @Test
+    void aiFirstModeUsesAiBeforeRules() {
+        TelegramBotPollingService service = service(null, TelegramIntentMode.AI_FIRST);
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "найди pgvector")));
+        when(aiTelegramIntentDetector.detectAny("найди pgvector")).thenReturn(TelegramIntent.search("semantic pgvector"));
+        when(inboxItemSearchService.search("semantic pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10))
+                .thenReturn(List.of(memoryResponse("learn pgvector")));
+
+        service.poll();
+
+        verify(aiTelegramIntentDetector).detectAny("найди pgvector");
+        verify(inboxItemSearchService).search("semantic pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        verify(inboxItemSearchService, never()).search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+    }
+
+    @Test
+    void aiFirstModeAsksAiForDeclarativeMessage() {
+        TelegramBotPollingService service = service(null, TelegramIntentMode.AI_FIRST);
+        String text = "Вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search";
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, text)));
+        when(aiTelegramIntentDetector.detectAny(text)).thenReturn(TelegramIntent.capture());
+        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response(text));
+
+        service.poll();
+
+        verify(aiTelegramIntentDetector).detectAny(text);
+        verify(inboxItemService).create(any(CreateInboxItemRequest.class));
+        verify(inboxItemSearchService, never()).search(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
     void pollReturnsSearchResultsForGenericQuestionSearch() {
         TelegramBotPollingService service = service(null);
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "Что хотел посмотреть?")));
-        when(inboxItemSearchService.search("хотел посмотреть", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.ALL, 10)).thenReturn(List.of(response("watch mist")));
+        when(inboxItemSearchService.search("хотел посмотреть", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.ALL, 10)).thenReturn(List.of(memoryResponse("watch mist")));
 
         service.poll();
 
@@ -196,13 +309,35 @@ class TelegramBotPollingServiceTest {
     }
 
     @Test
+    void pollAddsMemoryAnswerBeforeSearchSourcesWhenAvailable() {
+        TelegramBotPollingService service = service(null);
+        MemoryUnitResponse source = memoryResponse("Купил USB-C кабель в магазине DNS");
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "где я купил кабель?")));
+        when(inboxItemSearchService.search("купил кабель", Set.of(), Set.of(), SearchPeriod.ALL, 10))
+                .thenReturn(List.of(source));
+        when(memoryAnswerService.answer("где я купил кабель?", List.of(source)))
+                .thenReturn(Optional.of(new MemoryAnswer("USB-C кабель куплен в магазине DNS.", List.of(source), 0.9)));
+
+        service.poll();
+
+        verify(inboxItemSearchService).search("купил кабель", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        verify(telegramApiClient).sendMessage(42, """
+                Ответ: USB-C кабель куплен в магазине DNS.
+
+                Источники:
+                1. Купил USB-C кабель в магазине DNS
+                   Тип: NOTE
+                   Добавлено: вчера""");
+    }
+
+    @Test
     void pollUsesAiFallbackForUnknownQuestion() {
         TelegramBotPollingService service = service(null);
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "напомни ту штуку для кухни")));
         when(aiTelegramIntentDetector.detect("напомни ту штуку для кухни"))
                 .thenReturn(TelegramIntent.search("кухня"));
         when(inboxItemSearchService.search("кухня", Set.of(), Set.of(), SearchPeriod.ALL, 10))
-                .thenReturn(List.of(response("выбрать штуку для кухни")));
+                .thenReturn(List.of(memoryResponse("выбрать штуку для кухни")));
 
         service.poll();
 
@@ -349,9 +484,13 @@ class TelegramBotPollingServiceTest {
     }
 
     private TelegramBotPollingService service(Long allowedChatId) {
+        return service(allowedChatId, TelegramIntentMode.HYBRID_SAFE);
+    }
+
+    private TelegramBotPollingService service(Long allowedChatId, TelegramIntentMode intentMode) {
         return new TelegramBotPollingService(
                 telegramApiClient,
-                new TelegramBotProperties(true, "token", "bot", allowedChatId),
+                new TelegramBotProperties(true, "token", "bot", allowedChatId, intentMode),
                 inboxItemService,
                 inboxItemSearchService,
                 new CommandTelegramIntentDetector(),
@@ -361,7 +500,8 @@ class TelegramBotPollingServiceTest {
                         Instant.parse("2026-06-13T09:00:00Z"),
                         ZoneId.of("Europe/Moscow")
                 )),
-                embeddingBackfillService
+                embeddingBackfillService,
+                memoryAnswerService
         );
     }
 
@@ -396,6 +536,28 @@ class TelegramBotPollingServiceTest {
                 null,
                 OffsetDateTime.parse("2026-06-12T12:00:00Z"),
                 OffsetDateTime.parse("2026-06-12T12:00:00Z")
+        );
+    }
+
+    private static MemoryUnitResponse memoryResponse(String sourceRawText) {
+        OffsetDateTime dateTime = OffsetDateTime.parse("2026-06-12T12:00:00Z");
+        return new MemoryUnitResponse(
+                UUID.fromString("22222222-2222-2222-2222-222222222222"),
+                UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                sourceRawText,
+                null,
+                null,
+                MemoryUnitType.NOTE,
+                Set.of(),
+                Set.of(),
+                false,
+                1.0,
+                sourceRawText,
+                null,
+                null,
+                dateTime,
+                dateTime,
+                dateTime
         );
     }
 }

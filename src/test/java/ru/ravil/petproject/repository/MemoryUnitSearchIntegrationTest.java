@@ -1,0 +1,182 @@
+package ru.ravil.petproject.repository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import ru.ravil.petproject.TestcontainersConfiguration;
+import ru.ravil.petproject.domain.InboxItem;
+import ru.ravil.petproject.domain.InboxItemSource;
+import ru.ravil.petproject.domain.InboxItemType;
+import ru.ravil.petproject.domain.MemorySlot;
+import ru.ravil.petproject.domain.MemorySlotRole;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.domain.MemoryUnitType;
+
+@Import(TestcontainersConfiguration.class)
+@SpringBootTest
+@Testcontainers(disabledWithoutDocker = true)
+class MemoryUnitSearchIntegrationTest {
+
+    @Autowired
+    private InboxItemRepository inboxItemRepository;
+
+    @Autowired
+    private MemoryUnitRepository memoryUnitRepository;
+
+    @BeforeEach
+    void setUp() {
+        inboxItemRepository.deleteAll();
+    }
+
+    @Test
+    void fullTextSearchReturnsMemoryUnits() {
+        MemoryUnit kafka = unit("Посмотреть доклад про Kafka", "Доклад про Kafka", MemoryUnitType.LEARNING, Set.of("kafka"));
+        unit("Хочу посмотреть фильм Мгла", "Посмотреть фильм Мгла", MemoryUnitType.MOVIE, Set.of("мгла"));
+
+        List<MemoryUnit> results = memoryUnitRepository.searchAdvanced(
+                        "kafka",
+                        true,
+                        "",
+                        false,
+                        "",
+                        false,
+                        Set.of("__no_types__"),
+                        false,
+                        Set.of("__no_tags__"),
+                        false,
+                        PageRequest.of(0, 10)
+                )
+                .stream()
+                .toList();
+
+        assertThat(results).extracting(MemoryUnit::getId).contains(kafka.getId());
+        assertThat(results).extracting(MemoryUnit::getTitle).contains("Доклад про Kafka");
+    }
+
+    @Test
+    void fullTextSearchReturnsMemoryUnitsBySlotValues() {
+        MemoryUnit purchase = unit(
+                "Покупка аксессуаров",
+                "Покупка аксессуаров",
+                MemoryUnitType.PURCHASE_RESEARCH,
+                Set.of("покупка"),
+                new SlotSpec(MemorySlotRole.OBJECT, "USB-C кабель", "usb-c кабель"),
+                new SlotSpec(MemorySlotRole.PLACE, "магазин DNS", "dns")
+        );
+        unit("Купить лампочки для дома", "Купить лампочки", MemoryUnitType.PURCHASE_RESEARCH, Set.of("покупка"));
+
+        List<MemoryUnit> results = memoryUnitRepository.searchAdvanced(
+                        "кабель dns",
+                        true,
+                        "",
+                        false,
+                        "",
+                        false,
+                        Set.of("__no_types__"),
+                        false,
+                        Set.of("__no_tags__"),
+                        false,
+                        PageRequest.of(0, 10)
+                )
+                .stream()
+                .toList();
+
+        assertThat(results).extracting(MemoryUnit::getId).contains(purchase.getId());
+        assertThat(results).extracting(MemoryUnit::getTitle).contains("Покупка аксессуаров");
+    }
+
+    @Test
+    void storesAndSearchesMemoryUnitEmbeddingsWithPgvector() {
+        MemoryUnit kafka = unit("Посмотреть доклад про Kafka", "Доклад про Kafka", MemoryUnitType.LEARNING, Set.of("kafka"));
+        MemoryUnit movie = unit("Хочу посмотреть фильм Мгла", "Посмотреть фильм Мгла", MemoryUnitType.MOVIE, Set.of("мгла"));
+
+        assertThat(memoryUnitRepository.findIdsMissingEmbedding(PageRequest.of(0, 10)))
+                .containsExactlyInAnyOrder(kafka.getId(), movie.getId());
+
+        int updatedKafka = memoryUnitRepository.updateEmbedding(
+                kafka.getId(),
+                vectorLiteral(0.9),
+                "test-embedding",
+                OffsetDateTime.now()
+        );
+        int updatedMovie = memoryUnitRepository.updateEmbedding(
+                movie.getId(),
+                vectorLiteral(-0.9),
+                "test-embedding",
+                OffsetDateTime.now()
+        );
+
+        assertThat(updatedKafka).isEqualTo(1);
+        assertThat(updatedMovie).isEqualTo(1);
+        assertThat(memoryUnitRepository.findIdsMissingEmbedding(PageRequest.of(0, 10))).isEmpty();
+
+        List<MemoryUnit> results = memoryUnitRepository.searchNearestByEmbedding(
+                vectorLiteral(0.85),
+                Set.of("__no_types__"),
+                false,
+                PageRequest.of(0, 2)
+        );
+
+        assertThat(results).extracting(MemoryUnit::getTitle)
+                .containsExactly("Доклад про Kafka", "Посмотреть фильм Мгла");
+    }
+
+    @Test
+    void vectorSearchCanFilterByMemoryUnitType() {
+        MemoryUnit kafka = unit("Посмотреть доклад про Kafka", "Доклад про Kafka", MemoryUnitType.LEARNING, Set.of("kafka"));
+        MemoryUnit movie = unit("Хочу посмотреть фильм Мгла", "Посмотреть фильм Мгла", MemoryUnitType.MOVIE, Set.of("мгла"));
+        memoryUnitRepository.updateEmbedding(kafka.getId(), vectorLiteral(0.9), "test-embedding", OffsetDateTime.now());
+        memoryUnitRepository.updateEmbedding(movie.getId(), vectorLiteral(0.8), "test-embedding", OffsetDateTime.now());
+
+        List<MemoryUnit> results = memoryUnitRepository.searchNearestByEmbedding(
+                vectorLiteral(0.85),
+                Set.of("MOVIE"),
+                true,
+                PageRequest.of(0, 10)
+        );
+
+        assertThat(results).extracting(MemoryUnit::getType).containsExactly(MemoryUnitType.MOVIE);
+    }
+
+    private MemoryUnit unit(String rawText, String title, MemoryUnitType type, Set<String> tags) {
+        return unit(rawText, title, type, tags, new SlotSpec[0]);
+    }
+
+    private MemoryUnit unit(String rawText, String title, MemoryUnitType type, Set<String> tags, SlotSpec... slots) {
+        InboxItem item = new InboxItem(rawText, InboxItemSource.MANUAL);
+        item.setTitle(title);
+        item.setType(type == MemoryUnitType.MOVIE ? InboxItemType.MOVIE : InboxItemType.NOTE);
+        MemoryUnit unit = new MemoryUnit(item, type, title);
+        unit.setSummary(rawText);
+        unit.setSourceQuote(rawText);
+        unit.setTags(tags);
+        for (SlotSpec slotSpec : slots) {
+            MemorySlot slot = new MemorySlot(unit, slotSpec.role(), slotSpec.value());
+            slot.setNormalizedValue(slotSpec.normalizedValue());
+            unit.addSlot(slot);
+        }
+        item.addMemoryUnit(unit);
+        inboxItemRepository.saveAndFlush(item);
+        return unit;
+    }
+
+    private static String vectorLiteral(double seed) {
+        return IntStream.range(0, 1536)
+                .mapToObj(index -> Double.toString(seed + (index * 0.000001)))
+                .collect(Collectors.joining(",", "[", "]"));
+    }
+
+    private record SlotSpec(MemorySlotRole role, String value, String normalizedValue) {
+    }
+}

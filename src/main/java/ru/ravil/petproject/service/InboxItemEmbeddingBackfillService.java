@@ -9,8 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import ru.ravil.petproject.ai.AiEmbeddingService;
 import ru.ravil.petproject.ai.EmbeddingResult;
-import ru.ravil.petproject.domain.InboxItem;
-import ru.ravil.petproject.repository.InboxItemRepository;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.repository.MemoryUnitRepository;
 
 @Service
 public class InboxItemEmbeddingBackfillService {
@@ -18,36 +18,36 @@ public class InboxItemEmbeddingBackfillService {
     private static final int DEFAULT_LIMIT = 25;
     private static final int MAX_LIMIT = 100;
 
-    private final InboxItemRepository inboxItemRepository;
+    private final MemoryUnitRepository memoryUnitRepository;
     private final AiEmbeddingService aiEmbeddingService;
 
     public InboxItemEmbeddingBackfillService(
-            InboxItemRepository inboxItemRepository,
+            MemoryUnitRepository memoryUnitRepository,
             AiEmbeddingService aiEmbeddingService
     ) {
-        this.inboxItemRepository = inboxItemRepository;
+        this.memoryUnitRepository = memoryUnitRepository;
         this.aiEmbeddingService = aiEmbeddingService;
     }
 
     @Transactional
     public int backfillMissingEmbeddings(Integer limit) {
         int normalizedLimit = normalizeLimit(limit);
-        List<UUID> ids = inboxItemRepository.findIdsMissingEmbedding(PageRequest.of(0, normalizedLimit));
+        List<UUID> ids = memoryUnitRepository.findIdsMissingEmbedding(PageRequest.of(0, normalizedLimit));
         int updated = 0;
 
         for (UUID id : ids) {
-            InboxItem item = inboxItemRepository.findById(id).orElse(null);
-            if (item == null) {
+            MemoryUnit unit = memoryUnitRepository.findById(id).orElse(null);
+            if (unit == null) {
                 continue;
             }
 
-            String document = searchDocument(item);
+            String document = searchDocument(unit);
             if (!StringUtils.hasText(document)) {
                 continue;
             }
 
             updated += aiEmbeddingService.embed(document)
-                    .map(result -> updateEmbedding(item.getId(), result))
+                    .map(result -> updateEmbedding(unit.getId(), result))
                     .orElse(0);
         }
 
@@ -55,7 +55,7 @@ public class InboxItemEmbeddingBackfillService {
     }
 
     private int updateEmbedding(UUID id, EmbeddingResult result) {
-        return inboxItemRepository.updateEmbedding(
+        return memoryUnitRepository.updateEmbedding(
                 id,
                 result.pgVector(),
                 result.model(),
@@ -63,11 +63,27 @@ public class InboxItemEmbeddingBackfillService {
         );
     }
 
-    private String searchDocument(InboxItem item) {
-        if (StringUtils.hasText(item.getSearchText())) {
-            return item.getSearchText();
+    private String searchDocument(MemoryUnit unit) {
+        if (StringUtils.hasText(unit.getSearchText())) {
+            return unit.getSearchText();
         }
-        return item.getRawText();
+        return java.util.stream.Stream.of(
+                        unit.getTitle(),
+                        unit.getSummary(),
+                        unit.getSourceQuote(),
+                        unit.getType() == null ? null : unit.getType().name(),
+                        String.join(" ", unit.getTags()),
+                        unit.getSlots().stream()
+                                .flatMap(slot -> java.util.stream.Stream.of(
+                                        slot.getRole() == null ? null : slot.getRole().name(),
+                                        slot.getValue(),
+                                        slot.getNormalizedValue()
+                                ))
+                                .filter(StringUtils::hasText)
+                                .collect(java.util.stream.Collectors.joining(" "))
+                )
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.joining(" "));
     }
 
     private int normalizeLimit(Integer limit) {

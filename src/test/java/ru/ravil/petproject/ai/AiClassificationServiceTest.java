@@ -52,6 +52,27 @@ class AiClassificationServiceTest {
     }
 
     @Test
+    void classifyNormalizesAndLimitsTags() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "title": "Embeddings with full-text search",
+                  "summary": "Embeddings work better together with full-text search.",
+                  "type": "LEARNING",
+                  "tags": [" PostgreSQL ", "PGVECTOR", "Embeddings", "Full-Text   Search", "PostgreSQL", "Ёлка", "extra"],
+                  "priority": "LOW",
+                  "actionable": false
+                }
+                """);
+
+        Optional<AiClassificationResult> result = service.classify("pgvector note");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().tags())
+                .containsExactly("postgresql", "pgvector", "embeddings", "full-text search", "елка", "extra");
+    }
+
+    @Test
     void classifyParsesRussianMovieWishAsNonActionableMovie() {
         when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
         when(openAiClient.classify(anyString(), anyString())).thenReturn("""

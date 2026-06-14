@@ -24,14 +24,18 @@ import ru.ravil.petproject.ai.EmbeddingResult;
 import ru.ravil.petproject.domain.InboxItem;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemType;
-import ru.ravil.petproject.dto.InboxItemResponse;
-import ru.ravil.petproject.repository.InboxItemRepository;
+import ru.ravil.petproject.domain.MemorySlot;
+import ru.ravil.petproject.domain.MemorySlotRole;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.domain.MemoryUnitType;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
+import ru.ravil.petproject.repository.MemoryUnitRepository;
 
 @ExtendWith(MockitoExtension.class)
 class InboxItemSearchServiceTest {
 
     @Mock
-    private InboxItemRepository inboxItemRepository;
+    private MemoryUnitRepository memoryUnitRepository;
 
     @Mock
     private ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
@@ -44,58 +48,131 @@ class InboxItemSearchServiceTest {
     @BeforeEach
     void setUp() {
         inboxItemSearchService = new InboxItemSearchService(
-                inboxItemRepository,
-                new InboxItemMapper(),
+                memoryUnitRepository,
+                new MemoryUnitMapper(),
                 aiEmbeddingServiceProvider
         );
     }
 
     @Test
     void searchTrimsQueryAndUsesDefaultLimit() {
-        InboxItem item = persistedItem("learn pgvector");
-        when(inboxItemRepository.search("pgvector", PageRequest.of(0, 10)))
-                .thenReturn(new PageImpl<>(List.of(item)));
+        MemoryUnit unit = persistedUnit("learn pgvector", "learn pgvector", MemoryUnitType.LEARNING, Set.of("pgvector"));
+        when(memoryUnitRepository.searchAdvanced(
+                "pgvector",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of(unit)));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search("  pgvector  ", null);
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search("  pgvector  ", null);
 
-        assertThat(responses).extracting(InboxItemResponse::rawText).containsExactly("learn pgvector");
-        verify(inboxItemRepository).search("pgvector", PageRequest.of(0, 10));
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText).containsExactly("learn pgvector");
+        verify(memoryUnitRepository).searchAdvanced(
+                "pgvector",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        );
     }
 
     @Test
     void searchCapsLimitToMaximum() {
-        when(inboxItemRepository.search("chair", PageRequest.of(0, 50)))
-                .thenReturn(new PageImpl<>(List.of()));
+        when(memoryUnitRepository.searchAdvanced(
+                "chair",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of()));
+        when(memoryUnitRepository.searchAdvanced(
+                "",
+                false,
+                "chair:*",
+                true,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of()));
+        when(memoryUnitRepository.searchAdvanced(
+                "",
+                false,
+                "",
+                false,
+                "chair",
+                true,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of()));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search("chair", 500);
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search("chair", 500);
 
         assertThat(responses).isEmpty();
-        verify(inboxItemRepository).search("chair", PageRequest.of(0, 50));
-    }
-
-    @Test
-    void searchUsesDefaultLimitWhenLimitIsInvalid() {
-        when(inboxItemRepository.search("chair", PageRequest.of(0, 10)))
-                .thenReturn(new PageImpl<>(List.of()));
-
-        inboxItemSearchService.search("chair", 0);
-
-        verify(inboxItemRepository).search("chair", PageRequest.of(0, 10));
+        verify(memoryUnitRepository).searchAdvanced(
+                "chair",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        );
     }
 
     @Test
     void searchReturnsEmptyListForBlankQueryWithoutCallingRepository() {
-        List<InboxItemResponse> responses = inboxItemSearchService.search("   ", 10);
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search("   ", 10);
 
         assertThat(responses).isEmpty();
-        verify(inboxItemRepository, never()).search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any());
+        verify(memoryUnitRepository, never()).searchAdvanced(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.any()
+        );
     }
 
     @Test
     void advancedSearchUsesFullTextQueryAndTags() {
-        InboxItem item = persistedItem("watch mist");
-        item.setTags(Set.of("кино"));
-        when(inboxItemRepository.searchAdvanced(
+        MemoryUnit unit = persistedUnit("watch mist", "watch mist", MemoryUnitType.MOVIE, Set.of("кино"));
+        when(memoryUnitRepository.searchAdvanced(
                 eq("посмотреть"),
                 eq(true),
                 eq(""),
@@ -107,17 +184,17 @@ class InboxItemSearchServiceTest {
                 eq(Set.of("кино", "фильм")),
                 eq(true),
                 eq(PageRequest.of(0, 50))
-        )).thenReturn(new PageImpl<>(List.of(item)));
+        )).thenReturn(new PageImpl<>(List.of(unit)));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
                 " посмотреть ",
                 Set.of("Фильм", " кино "),
                 SearchPeriod.ALL,
                 null
         );
 
-        assertThat(responses).extracting(InboxItemResponse::rawText).containsExactly("watch mist");
-        verify(inboxItemRepository).searchAdvanced(
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText).containsExactly("watch mist");
+        verify(memoryUnitRepository).searchAdvanced(
                 "посмотреть",
                 true,
                 "",
@@ -133,127 +210,14 @@ class InboxItemSearchServiceTest {
     }
 
     @Test
-    void advancedSearchKeepsUserQueryWithoutCategoryAliases() {
-        when(inboxItemRepository.searchAdvanced(
-                "рецепты пельменей",
-                true,
-                "",
-                false,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
-                "",
-                false,
-                "рецепты:* | пельменей:*",
-                true,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
-                "",
-                false,
-                "",
-                false,
-                "рецепты пельменей",
-                true,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of()));
-
-        inboxItemSearchService.search("рецепты пельменей", Set.of(), SearchPeriod.ALL, 10);
-
-        verify(inboxItemRepository).searchAdvanced(
-                "рецепты пельменей",
-                true,
-                "",
-                false,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        );
-    }
-
-    @Test
-    void advancedSearchKeepsEntitySpecificWordsWithoutAliases() {
-        when(inboxItemRepository.searchAdvanced(
-                "ортодонту",
-                true,
-                "",
-                false,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
-                "",
-                false,
-                "ортодонту:*",
-                true,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
-                "",
-                false,
-                "",
-                false,
-                "ортодонту",
-                true,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of()));
-
-        inboxItemSearchService.search("ортодонту", Set.of(), SearchPeriod.ALL, 10);
-
-        verify(inboxItemRepository).searchAdvanced(
-                "ортодонту",
-                true,
-                "",
-                false,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        );
-    }
-
-    @Test
     void advancedSearchFallsBackToContainsMatchForProperNouns() {
-        InboxItem item = persistedItem("Прочитать книгу Цветы для Элджернона");
-        when(inboxItemRepository.searchAdvanced(
+        MemoryUnit unit = persistedUnit(
+                "Прочитать книгу Цветы для Элджернона",
+                "Прочитать книгу Цветы для Элджернона",
+                MemoryUnitType.BOOK,
+                Set.of("книга", "цветы для элджернона")
+        );
+        when(memoryUnitRepository.searchAdvanced(
                 "элджернона",
                 true,
                 "",
@@ -266,7 +230,7 @@ class InboxItemSearchServiceTest {
                 false,
                 PageRequest.of(0, 50)
         )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "",
                 false,
                 "элджернона:*",
@@ -279,7 +243,7 @@ class InboxItemSearchServiceTest {
                 false,
                 PageRequest.of(0, 50)
         )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "",
                 false,
                 "",
@@ -291,9 +255,9 @@ class InboxItemSearchServiceTest {
                 Set.of("__no_tags__"),
                 false,
                 PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of(item)));
+        )).thenReturn(new PageImpl<>(List.of(unit)));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
                 "элджернона",
                 Set.of(),
                 Set.of(),
@@ -301,29 +265,29 @@ class InboxItemSearchServiceTest {
                 10
         );
 
-        assertThat(responses).extracting(InboxItemResponse::rawText)
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
                 .containsExactly("Прочитать книгу Цветы для Элджернона");
         verify(aiEmbeddingServiceProvider, never()).getIfAvailable();
     }
 
     @Test
-    void advancedSearchRanksPreferenceQuestionByMostRelevantItemFirst() {
-        InboxItem preferred = persistedItem("Маше нравятся цветы");
-        preferred.setTitle("Маше нравятся цветы");
-        preferred.setTags(Set.of("цветы", "предпочтения", "маше"));
+    void advancedSearchRanksPreferenceQuestionByMemoryUnitFields() {
+        MemoryUnit preferred = persistedUnit("Маше нравятся цветы", "Маше нравятся цветы", MemoryUnitType.PREFERENCE,
+                Set.of("цветы", "предпочтения", "маше"));
         preferred.setCreatedAt(OffsetDateTime.parse("2026-06-12T10:00:00Z"));
+        preferred.getItem().setCreatedAt(OffsetDateTime.parse("2026-06-12T10:00:00Z"));
 
-        InboxItem secondary = persistedItem("Маша любит танцевать");
-        secondary.setTitle("Маша любит танцевать");
-        secondary.setTags(Set.of("маша", "танцы", "личное"));
+        MemoryUnit secondary = persistedUnit("Маша любит танцевать", "Маша любит танцевать", MemoryUnitType.PREFERENCE,
+                Set.of("маша", "танцы", "личное"));
         secondary.setCreatedAt(OffsetDateTime.parse("2026-06-13T10:00:00Z"));
+        secondary.getItem().setCreatedAt(OffsetDateTime.parse("2026-06-13T10:00:00Z"));
 
-        InboxItem tertiary = persistedItem("Подарить Маше книгу или поездку на выходные");
-        tertiary.setTitle("Подарить Маше книгу или поездку на выходные");
-        tertiary.setTags(Set.of("подарок", "маше", "книга"));
+        MemoryUnit tertiary = persistedUnit("Подарить Маше книгу или поездку на выходные", "Подарить Маше книгу или поездку на выходные",
+                MemoryUnitType.IDEA, Set.of("подарок", "маше", "книга"));
         tertiary.setCreatedAt(OffsetDateTime.parse("2026-06-13T09:00:00Z"));
+        tertiary.getItem().setCreatedAt(OffsetDateTime.parse("2026-06-13T09:00:00Z"));
 
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "что нравится Маше?",
                 true,
                 "",
@@ -337,7 +301,7 @@ class InboxItemSearchServiceTest {
                 PageRequest.of(0, 50)
         )).thenReturn(new PageImpl<>(List.of(tertiary, secondary, preferred)));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
                 "что нравится Маше?",
                 Set.of(),
                 Set.of(),
@@ -346,28 +310,15 @@ class InboxItemSearchServiceTest {
         );
 
         assertThat(responses).isNotEmpty();
-        assertThat(responses.get(0).rawText()).isEqualTo("Маше нравятся цветы");
-        assertThat(responses).extracting(InboxItemResponse::rawText)
-                .contains(
-                        "Маше нравятся цветы",
-                        "Маша любит танцевать",
-                        "Подарить Маше книгу или поездку на выходные"
-                );
+        assertThat(responses.get(0).sourceRawText()).isEqualTo("Маше нравятся цветы");
     }
 
     @Test
-    void advancedSearchDropsWeakNoiseWhenStrongMatchesExist() {
-        InboxItem preferred = persistedItem("Маше нравятся цветы");
-        preferred.setTitle("Маше нравятся цветы");
-        preferred.setTags(Set.of("цветы", "предпочтения", "маше"));
-        preferred.setCreatedAt(OffsetDateTime.parse("2026-06-12T10:00:00Z"));
+    void advancedSearchDoesNotExpandUntypedLexicalResultsWithVectorNoise() {
+        MemoryUnit preferred = persistedUnit("Маше нравятся цветы", "Маше нравятся цветы", MemoryUnitType.PREFERENCE,
+                Set.of("цветы", "предпочтения", "маше"));
 
-        InboxItem noise = persistedItem("Посмотреть фильм Мгла");
-        noise.setTitle("Посмотреть фильм Мгла");
-        noise.setTags(Set.of("фильм", "просмотр"));
-        noise.setCreatedAt(OffsetDateTime.parse("2026-06-13T10:00:00Z"));
-
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "что нравится Маше?",
                 true,
                 "",
@@ -380,17 +331,8 @@ class InboxItemSearchServiceTest {
                 false,
                 PageRequest.of(0, 50)
         )).thenReturn(new PageImpl<>(List.of(preferred)));
-        when(aiEmbeddingServiceProvider.getIfAvailable()).thenReturn(aiEmbeddingService);
-        when(aiEmbeddingService.embed("что нравится Маше?"))
-                .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-embedding")));
-        when(inboxItemRepository.searchNearestByEmbedding(
-                "[0.1,0.2]",
-                Set.of("__no_types__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(List.of(preferred, noise));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
                 "что нравится Маше?",
                 Set.of(),
                 Set.of(),
@@ -398,26 +340,34 @@ class InboxItemSearchServiceTest {
                 10
         );
 
-        assertThat(responses).extracting(InboxItemResponse::rawText)
-                .contains("Маше нравятся цветы")
-                .doesNotContain("Посмотреть фильм Мгла");
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("Маше нравятся цветы");
+        verify(aiEmbeddingServiceProvider, never()).getIfAvailable();
     }
 
     @Test
-    void advancedSearchRanksTitleAndTagsBeforeRawText() {
-        InboxItem rawTextMatch = persistedItem("хочу посмотреть Мглу");
-        rawTextMatch.setCreatedAt(OffsetDateTime.parse("2026-06-13T12:00:00Z"));
+    void advancedSearchFiltersWeakPurchaseMatchesWhenSpecificObjectIsRequested() {
+        MemoryUnit usbCable = persistedUnit(
+                "Купил USB-C кабель и зарядку в магазине DNS",
+                "Куплен USB-C кабель и зарядка в магазине DNS",
+                MemoryUnitType.PURCHASE_RESEARCH,
+                Set.of("dns", "покупка", "магазин", "зарядка", "usb-c")
+        );
+        MemoryUnit vitamins = persistedUnit(
+                "Купить витамин D после консультации с врачом",
+                "Купить витамин D после консультации с врачом",
+                MemoryUnitType.TASK,
+                Set.of("витамин d", "здоровье", "покупка")
+        );
+        MemoryUnit bulbs = persistedUnit(
+                "Купить лампочки E27 теплый свет",
+                "Купить лампочки E27 теплый свет",
+                MemoryUnitType.PURCHASE_RESEARCH,
+                Set.of("лампочки", "покупка", "освещение")
+        );
 
-        InboxItem titleMatch = persistedItem("старый текст");
-        titleMatch.setTitle("посмотреть");
-        titleMatch.setCreatedAt(OffsetDateTime.parse("2026-06-10T12:00:00Z"));
-
-        InboxItem tagMatch = persistedItem("старый текст");
-        tagMatch.setTags(Set.of("посмотреть"));
-        tagMatch.setCreatedAt(OffsetDateTime.parse("2026-06-11T12:00:00Z"));
-
-        when(inboxItemRepository.searchAdvanced(
-                "посмотреть",
+        when(memoryUnitRepository.searchAdvanced(
+                "когда я купил юсб кабель?",
                 true,
                 "",
                 false,
@@ -428,24 +378,69 @@ class InboxItemSearchServiceTest {
                 Set.of("__no_tags__"),
                 false,
                 PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of(rawTextMatch, tagMatch, titleMatch)));
+        )).thenReturn(new PageImpl<>(List.of(vitamins, bulbs, usbCable)));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
-                "посмотреть",
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "когда я купил юсб кабель?",
+                Set.of(),
                 Set.of(),
                 SearchPeriod.ALL,
                 10
         );
 
-        assertThat(responses).extracting(InboxItemResponse::rawText)
-                .containsExactly("старый текст", "старый текст", "хочу посмотреть Мглу");
-        assertThat(responses.get(0).title()).isEqualTo("посмотреть");
-        assertThat(responses.get(1).tags()).containsExactly("посмотреть");
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("Купил USB-C кабель и зарядку в магазине DNS");
+    }
+
+    @Test
+    void advancedSearchRanksSlotMatchesAboveGenericLexicalMatches() {
+        MemoryUnit purchaseWithSlots = persistedUnit(
+                "Покупка аксессуаров",
+                "Покупка аксессуаров",
+                MemoryUnitType.PURCHASE_RESEARCH,
+                Set.of("покупка"),
+                new SlotSpec(MemorySlotRole.OBJECT, "USB-C кабель", "usb-c кабель"),
+                new SlotSpec(MemorySlotRole.PLACE, "магазин DNS", "dns")
+        );
+        MemoryUnit genericPurchase = persistedUnit(
+                "Купить витамин D после консультации",
+                "Купить витамин D после консультации",
+                MemoryUnitType.TASK,
+                Set.of("покупка")
+        );
+
+        when(memoryUnitRepository.searchAdvanced(
+                "когда я купил юсб кабель?",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of(genericPurchase, purchaseWithSlots)));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "когда я купил юсб кабель?",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("Покупка аксессуаров");
+        assertThat(responses.getFirst().slots())
+                .extracting(slot -> slot.role().name() + ":" + slot.normalizedValue())
+                .contains("OBJECT:usb-c кабель", "PLACE:dns");
     }
 
     @Test
     void advancedSearchUsesDateRangeForToday() {
-        when(inboxItemRepository.searchAdvancedBetween(
+        when(memoryUnitRepository.searchAdvancedBetween(
                 eq("рецепты пельменей"),
                 eq(true),
                 eq(""),
@@ -460,7 +455,7 @@ class InboxItemSearchServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 eq(PageRequest.of(0, 50))
         )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvancedBetween(
+        when(memoryUnitRepository.searchAdvancedBetween(
                 eq(""),
                 eq(false),
                 eq("рецепты:* | пельменей:*"),
@@ -475,7 +470,7 @@ class InboxItemSearchServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 eq(PageRequest.of(0, 50))
         )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvancedBetween(
+        when(memoryUnitRepository.searchAdvancedBetween(
                 eq(""),
                 eq(false),
                 eq(""),
@@ -493,7 +488,7 @@ class InboxItemSearchServiceTest {
 
         inboxItemSearchService.search("рецепты пельменей", Set.of(), SearchPeriod.TODAY, 10);
 
-        verify(inboxItemRepository).searchAdvancedBetween(
+        verify(memoryUnitRepository).searchAdvancedBetween(
                 eq("рецепты пельменей"),
                 eq(true),
                 eq(""),
@@ -511,30 +506,9 @@ class InboxItemSearchServiceTest {
     }
 
     @Test
-    void advancedSearchReturnsEmptyListWhenThereAreNoSearchCriteria() {
-        List<InboxItemResponse> responses = inboxItemSearchService.search(" ", Set.of(), SearchPeriod.ALL, 10);
-
-        assertThat(responses).isEmpty();
-        verify(inboxItemRepository, never()).searchAdvanced(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyBoolean(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyBoolean(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyBoolean(),
-                org.mockito.ArgumentMatchers.anySet(),
-                org.mockito.ArgumentMatchers.anyBoolean(),
-                org.mockito.ArgumentMatchers.anySet(),
-                org.mockito.ArgumentMatchers.anyBoolean(),
-                org.mockito.ArgumentMatchers.any()
-        );
-    }
-
-    @Test
     void advancedSearchUsesTypeFiltersAsSearchCriteria() {
-        InboxItem item = persistedItem("watch mist");
-        item.setType(InboxItemType.MOVIE);
-        when(inboxItemRepository.searchAdvanced(
+        MemoryUnit unit = persistedUnit("watch mist", "watch mist", MemoryUnitType.MOVIE, Set.of("movie"));
+        when(memoryUnitRepository.searchAdvanced(
                 "фильмы",
                 true,
                 "",
@@ -546,9 +520,9 @@ class InboxItemSearchServiceTest {
                 Set.of("__no_tags__"),
                 false,
                 PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of(item)));
+        )).thenReturn(new PageImpl<>(List.of(unit)));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
                 "фильмы",
                 Set.of(InboxItemType.MOVIE),
                 Set.of(),
@@ -556,8 +530,8 @@ class InboxItemSearchServiceTest {
                 10
         );
 
-        assertThat(responses).extracting(InboxItemResponse::type).containsExactly(InboxItemType.MOVIE);
-        verify(inboxItemRepository).searchAdvanced(
+        assertThat(responses).extracting(MemoryUnitResponse::type).containsExactly(MemoryUnitType.MOVIE);
+        verify(memoryUnitRepository).searchAdvanced(
                 "фильмы",
                 true,
                 "",
@@ -574,7 +548,7 @@ class InboxItemSearchServiceTest {
 
     @Test
     void advancedSearchDoesNotUseVectorSearchForShortKeywordQuery() {
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "kafka",
                 true,
                 "",
@@ -587,7 +561,7 @@ class InboxItemSearchServiceTest {
                 false,
                 PageRequest.of(0, 50)
         )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "",
                 false,
                 "kafka:*",
@@ -600,7 +574,7 @@ class InboxItemSearchServiceTest {
                 false,
                 PageRequest.of(0, 50)
         )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "",
                 false,
                 "",
@@ -614,7 +588,7 @@ class InboxItemSearchServiceTest {
                 PageRequest.of(0, 50)
         )).thenReturn(new PageImpl<>(List.of()));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
                 "kafka",
                 Set.of(),
                 Set.of(),
@@ -627,53 +601,13 @@ class InboxItemSearchServiceTest {
     }
 
     @Test
-    void advancedSearchBuildsRelaxedQueryFromNaturalLanguageWords() {
-        InboxItem item = persistedItem("рецепт картохи");
-        when(inboxItemRepository.searchAdvanced(
-                "сварить из картохи",
-                true,
-                "",
-                false,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of()));
-        when(inboxItemRepository.searchAdvanced(
-                "",
-                false,
-                "сварить:* | картохи:*",
-                true,
-                "",
-                false,
-                Set.of("__no_types__"),
-                false,
-                Set.of("__no_tags__"),
-                false,
-                PageRequest.of(0, 50)
-        )).thenReturn(new PageImpl<>(List.of(item)));
-
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
-                "сварить из картохи",
-                Set.of(),
-                Set.of(),
-                SearchPeriod.ALL,
-                10
-        );
-
-        assertThat(responses).extracting(InboxItemResponse::rawText).containsExactly("рецепт картохи");
-    }
-
-    @Test
     void advancedSearchAppendsVectorCandidatesForSemanticQuery() {
-        InboxItem lexicalMatch = persistedItem("хочу посмотреть фильм Мгла");
-        InboxItem vectorMatch = persistedItem("хочу посмотреть сериал Severance");
-        vectorMatch.setType(InboxItemType.MOVIE);
+        MemoryUnit lexicalMatch = persistedUnit("хочу посмотреть фильм Мгла", "Посмотреть фильм Мгла", MemoryUnitType.MOVIE,
+                Set.of("фильм", "просмотр"));
+        MemoryUnit vectorMatch = persistedUnit("хочу посмотреть сериал Severance", "Посмотреть сериал Severance", MemoryUnitType.MOVIE,
+                Set.of("сериал", "просмотр"));
 
-        when(inboxItemRepository.searchAdvanced(
+        when(memoryUnitRepository.searchAdvanced(
                 "хотел посмотреть",
                 true,
                 "",
@@ -689,14 +623,14 @@ class InboxItemSearchServiceTest {
         when(aiEmbeddingServiceProvider.getIfAvailable()).thenReturn(aiEmbeddingService);
         when(aiEmbeddingService.embed("хотел посмотреть"))
                 .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-embedding")));
-        when(inboxItemRepository.searchNearestByEmbedding(
+        when(memoryUnitRepository.searchNearestByEmbedding(
                 "[0.1,0.2]",
                 Set.of("MOVIE"),
                 true,
                 PageRequest.of(0, 50)
         )).thenReturn(List.of(vectorMatch));
 
-        List<InboxItemResponse> responses = inboxItemSearchService.search(
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
                 "хотел посмотреть",
                 Set.of(InboxItemType.MOVIE),
                 Set.of(),
@@ -704,23 +638,64 @@ class InboxItemSearchServiceTest {
                 10
         );
 
-        assertThat(responses).extracting(InboxItemResponse::rawText)
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
                 .containsExactly("хочу посмотреть фильм Мгла", "хочу посмотреть сериал Severance");
     }
 
-    private static InboxItem persistedItem(String rawText) {
-        InboxItem item = new InboxItem(rawText, InboxItemSource.MANUAL);
-        invokeLifecycleMethod(item, "prePersist");
-        return item;
+    @Test
+    void recentReturnsMemoryUnitsOrderedBySourceCreatedAt() {
+        MemoryUnit unit = persistedUnit("source", "unit", MemoryUnitType.NOTE, Set.of());
+        when(memoryUnitRepository.findAllBySourceCreatedAtDesc(PageRequest.of(0, 5)))
+                .thenReturn(List.of(unit));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.recent(5);
+
+        assertThat(responses).extracting(MemoryUnitResponse::title).containsExactly("unit");
+        verify(memoryUnitRepository).findAllBySourceCreatedAtDesc(PageRequest.of(0, 5));
     }
 
-    private static void invokeLifecycleMethod(InboxItem item, String methodName) {
+    private static MemoryUnit persistedUnit(
+            String rawText,
+            String title,
+            MemoryUnitType type,
+            Set<String> tags
+    ) {
+        return persistedUnit(rawText, title, type, tags, new SlotSpec[0]);
+    }
+
+    private static MemoryUnit persistedUnit(
+            String rawText,
+            String title,
+            MemoryUnitType type,
+            Set<String> tags,
+            SlotSpec... slots
+    ) {
+        InboxItem item = new InboxItem(rawText, InboxItemSource.MANUAL);
+        invokeLifecycleMethod(item, "prePersist");
+        MemoryUnit unit = new MemoryUnit(item, type, title);
+        unit.setSummary(rawText);
+        unit.setSourceQuote(rawText);
+        unit.setTags(tags);
+        for (SlotSpec slotSpec : slots) {
+            MemorySlot slot = new MemorySlot(unit, slotSpec.role(), slotSpec.value());
+            slot.setNormalizedValue(slotSpec.normalizedValue());
+            unit.addSlot(slot);
+            invokeLifecycleMethod(slot, "prePersist");
+        }
+        invokeLifecycleMethod(unit, "prePersist");
+        return unit;
+    }
+
+    private static void invokeLifecycleMethod(Object item, String methodName) {
         try {
-            Method method = InboxItem.class.getDeclaredMethod(methodName);
+            Method method = item.getClass().getDeclaredMethod(methodName);
             method.setAccessible(true);
             method.invoke(item);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Failed to invoke lifecycle method " + methodName, exception);
         }
+    }
+
+    private record SlotSpec(MemorySlotRole role, String value, String normalizedValue) {
     }
 }

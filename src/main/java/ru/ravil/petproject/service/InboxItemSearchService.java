@@ -17,10 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import ru.ravil.petproject.ai.AiEmbeddingService;
 import ru.ravil.petproject.ai.EmbeddingResult;
-import ru.ravil.petproject.domain.InboxItem;
 import ru.ravil.petproject.domain.InboxItemType;
-import ru.ravil.petproject.dto.InboxItemResponse;
-import ru.ravil.petproject.repository.InboxItemRepository;
+import ru.ravil.petproject.domain.MemorySlot;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
+import ru.ravil.petproject.repository.MemoryUnitRepository;
 
 @Service
 public class InboxItemSearchService {
@@ -36,41 +37,56 @@ public class InboxItemSearchService {
             "можно", "надо", "нужно", "там", "было", "есть", "это", "за", "сегодня", "вчера"
     );
 
-    private final InboxItemRepository inboxItemRepository;
-    private final InboxItemMapper inboxItemMapper;
+    private final MemoryUnitRepository memoryUnitRepository;
+    private final MemoryUnitMapper memoryUnitMapper;
     private final ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
 
     public InboxItemSearchService(
-            InboxItemRepository inboxItemRepository,
-            InboxItemMapper inboxItemMapper,
+            MemoryUnitRepository memoryUnitRepository,
+            MemoryUnitMapper memoryUnitMapper,
             ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider
     ) {
-        this.inboxItemRepository = inboxItemRepository;
-        this.inboxItemMapper = inboxItemMapper;
+        this.memoryUnitRepository = memoryUnitRepository;
+        this.memoryUnitMapper = memoryUnitMapper;
         this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
     }
 
     @Transactional(readOnly = true)
-    public List<InboxItemResponse> search(String query, Integer limit) {
+    public List<MemoryUnitResponse> search(String query, Integer limit) {
         if (!StringUtils.hasText(query)) {
             return List.of();
         }
+        return search(query, Set.of(), Set.of(), SearchPeriod.ALL, limit);
+    }
 
-        String normalizedQuery = query.trim();
-        int normalizedLimit = normalizeLimit(limit);
-        return inboxItemRepository.search(normalizedQuery, PageRequest.of(0, normalizedLimit))
+    @Transactional(readOnly = true)
+    public List<MemoryUnitResponse> recent(Integer limit) {
+        return memoryUnitRepository.findAllBySourceCreatedAtDesc(PageRequest.of(0, normalizeLimit(limit)))
                 .stream()
-                .map(inboxItemMapper::toResponse)
+                .map(memoryUnitMapper::toResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<InboxItemResponse> search(String query, Set<String> tags, SearchPeriod period, Integer limit) {
+    public List<MemoryUnitResponse> today(Integer limit) {
+        DateRange dateRange = dateRange(SearchPeriod.TODAY);
+        return memoryUnitRepository.findBySourceCreatedAtBetween(
+                        dateRange.start(),
+                        dateRange.end(),
+                        PageRequest.of(0, normalizeLimit(limit))
+                )
+                .stream()
+                .map(memoryUnitMapper::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemoryUnitResponse> search(String query, Set<String> tags, SearchPeriod period, Integer limit) {
         return search(query, Set.of(), tags, period, limit);
     }
 
     @Transactional(readOnly = true)
-    public List<InboxItemResponse> search(
+    public List<MemoryUnitResponse> search(
             String query,
             Set<InboxItemType> itemTypes,
             Set<String> tags,
@@ -98,7 +114,7 @@ public class InboxItemSearchService {
         Set<String> searchTags = normalizedTags.isEmpty() ? Set.of("__no_tags__") : normalizedTags;
         PageRequest pageRequest = PageRequest.of(0, candidateLimit);
 
-        List<InboxItem> lexicalCandidates = searchLexical(
+        List<MemoryUnit> lexicalCandidates = searchLexical(
                 normalizedQuery,
                 StringUtils.hasText(normalizedQuery),
                 "",
@@ -126,7 +142,7 @@ public class InboxItemSearchService {
                     searchTags,
                     dateRange,
                     pageRequest
-                );
+            );
         }
         if (lexicalCandidates.isEmpty() && StringUtils.hasText(containsQuery)) {
             lexicalCandidates = searchLexical(
@@ -148,14 +164,16 @@ public class InboxItemSearchService {
         lexicalCandidates = lexicalCandidates.stream()
                 .sorted(searchComparator(normalizedQuery, normalizedTypes, normalizedTags))
                 .toList();
-        List<InboxItem> vectorCandidates = vectorCandidates(
-                normalizedQuery,
-                normalizedTypes,
-                dateRange,
-                candidateLimit
-        );
+        List<MemoryUnit> vectorCandidates = shouldExpandWithVectorCandidates(lexicalCandidates, normalizedTypes)
+                ? vectorCandidates(
+                        normalizedQuery,
+                        normalizedTypes,
+                        dateRange,
+                        candidateLimit
+                )
+                : List.of();
 
-        List<InboxItem> rankedCandidates = rankCandidates(
+        List<MemoryUnit> rankedCandidates = rankCandidates(
                 lexicalCandidates,
                 vectorCandidates,
                 normalizedQuery,
@@ -164,11 +182,11 @@ public class InboxItemSearchService {
         );
         return rankedCandidates.stream()
                 .limit(normalizedLimit)
-                .map(inboxItemMapper::toResponse)
+                .map(memoryUnitMapper::toResponse)
                 .toList();
     }
 
-    private List<InboxItem> searchLexical(
+    private List<MemoryUnit> searchLexical(
             String query,
             boolean hasQuery,
             String relaxedQuery,
@@ -183,7 +201,7 @@ public class InboxItemSearchService {
             PageRequest pageRequest
     ) {
         return dateRange.hasBounds()
-                ? inboxItemRepository.searchAdvancedBetween(
+                ? memoryUnitRepository.searchAdvancedBetween(
                         query,
                         hasQuery,
                         relaxedQuery,
@@ -198,7 +216,7 @@ public class InboxItemSearchService {
                         dateRange.end(),
                         pageRequest
                 ).stream().toList()
-                : inboxItemRepository.searchAdvanced(
+                : memoryUnitRepository.searchAdvanced(
                         query,
                         hasQuery,
                         relaxedQuery,
@@ -213,7 +231,7 @@ public class InboxItemSearchService {
                 ).stream().toList();
     }
 
-    private List<InboxItem> vectorCandidates(
+    private List<MemoryUnit> vectorCandidates(
             String query,
             Set<String> itemTypes,
             DateRange dateRange,
@@ -233,7 +251,7 @@ public class InboxItemSearchService {
                 .orElse(List.of());
     }
 
-    private List<InboxItem> searchNearest(
+    private List<MemoryUnit> searchNearest(
             EmbeddingResult result,
             Set<String> itemTypes,
             DateRange dateRange,
@@ -243,7 +261,7 @@ public class InboxItemSearchService {
         PageRequest pageRequest = PageRequest.of(0, limit);
 
         return dateRange.hasBounds()
-                ? inboxItemRepository.searchNearestByEmbeddingBetween(
+                ? memoryUnitRepository.searchNearestByEmbeddingBetween(
                         result.pgVector(),
                         searchTypes,
                         !itemTypes.isEmpty(),
@@ -251,7 +269,7 @@ public class InboxItemSearchService {
                         dateRange.end(),
                         pageRequest
                 )
-                : inboxItemRepository.searchNearestByEmbedding(
+                : memoryUnitRepository.searchNearestByEmbedding(
                         result.pgVector(),
                         searchTypes,
                         !itemTypes.isEmpty(),
@@ -267,39 +285,64 @@ public class InboxItemSearchService {
         return !itemTypes.isEmpty() || tokens.size() >= 2;
     }
 
-    private List<InboxItem> rankCandidates(
-            List<InboxItem> lexicalCandidates,
-            List<InboxItem> vectorCandidates,
+    private boolean shouldExpandWithVectorCandidates(List<MemoryUnit> lexicalCandidates, Set<String> itemTypes) {
+        return lexicalCandidates.isEmpty() || !itemTypes.isEmpty();
+    }
+
+    private List<MemoryUnit> rankCandidates(
+            List<MemoryUnit> lexicalCandidates,
+            List<MemoryUnit> vectorCandidates,
             String query,
             Set<String> itemTypes,
             Set<String> tags
     ) {
-        List<InboxItem> ranked = new ArrayList<>(lexicalCandidates.size() + vectorCandidates.size());
+        List<MemoryUnit> ranked = new ArrayList<>(lexicalCandidates.size() + vectorCandidates.size());
         Set<java.util.UUID> seen = new LinkedHashSet<>();
-        int topLexicalScore = 0;
+        List<ScoredMemoryUnit> scoredLexicalCandidates = lexicalCandidates.stream()
+                .map(unit -> new ScoredMemoryUnit(unit, score(unit, query, itemTypes, tags)))
+                .toList();
+        int topLexicalScore = scoredLexicalCandidates.stream()
+                .mapToInt(ScoredMemoryUnit::score)
+                .max()
+                .orElse(0);
+        int lexicalCutoff = lexicalRelevanceCutoff(query, topLexicalScore);
 
-        for (InboxItem item : lexicalCandidates) {
-            topLexicalScore = Math.max(topLexicalScore, score(item, query, itemTypes, tags));
-            if (seen.add(item.getId())) {
-                ranked.add(item);
+        for (ScoredMemoryUnit candidate : scoredLexicalCandidates) {
+            MemoryUnit unit = candidate.unit();
+            if (candidate.score() < lexicalCutoff) {
+                continue;
+            }
+            if (seen.add(unit.getId())) {
+                ranked.add(unit);
             }
         }
 
         for (int index = 0; index < vectorCandidates.size(); index++) {
-            InboxItem item = vectorCandidates.get(index);
+            MemoryUnit unit = vectorCandidates.get(index);
             int vectorScore = Math.max(0, VECTOR_RANK_BONUS - (index * VECTOR_RANK_PENALTY));
-            int combinedScore = score(item, query, itemTypes, tags) + vectorScore;
-            if (seen.contains(item.getId())) {
+            int combinedScore = score(unit, query, itemTypes, tags) + vectorScore;
+            if (seen.contains(unit.getId())) {
                 continue;
             }
             if (combinedScore < vectorRelevanceCutoff(topLexicalScore)) {
                 continue;
             }
-            seen.add(item.getId());
-            ranked.add(item);
+            seen.add(unit.getId());
+            ranked.add(unit);
         }
 
         return List.copyOf(ranked);
+    }
+
+    private int lexicalRelevanceCutoff(String query, int topLexicalScore) {
+        if (!StringUtils.hasText(query) || topLexicalScore <= 0) {
+            return 0;
+        }
+        if (topLexicalScore < MIN_RELEVANCE_SCORE) {
+            return 0;
+        }
+        double ratio = contentTokens(query).size() >= 3 ? 0.66d : 0.5d;
+        return Math.max(MIN_RELEVANCE_SCORE, (int) Math.ceil(topLexicalScore * ratio));
     }
 
     private int vectorRelevanceCutoff(int topLexicalScore) {
@@ -309,41 +352,64 @@ public class InboxItemSearchService {
         return Math.max(MIN_RELEVANCE_SCORE, topLexicalScore / 2);
     }
 
-    private Comparator<InboxItem> searchComparator(String query, Set<String> itemTypes, Set<String> tags) {
+    private Comparator<MemoryUnit> searchComparator(String query, Set<String> itemTypes, Set<String> tags) {
         return Comparator
-                .comparingInt((InboxItem item) -> score(item, query, itemTypes, tags))
+                .comparingInt((MemoryUnit unit) -> score(unit, query, itemTypes, tags))
                 .reversed()
                 .thenComparing(
-                        InboxItem::getCreatedAt,
+                        this::sourceCreatedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())
                 );
     }
 
-    private int score(InboxItem item, String query, Set<String> itemTypes, Set<String> tags) {
+    private OffsetDateTime sourceCreatedAt(MemoryUnit unit) {
+        if (unit.getItem() != null && unit.getItem().getCreatedAt() != null) {
+            return unit.getItem().getCreatedAt();
+        }
+        return unit.getCreatedAt();
+    }
+
+    private int score(MemoryUnit unit, String query, Set<String> itemTypes, Set<String> tags) {
         int score = 0;
         String normalizedQuery = normalizeText(query);
         List<String> queryTokens = contentTokens(normalizedQuery);
-        Set<String> itemTags = normalizeTags(item.getTags());
+        Set<String> unitTags = normalizeTags(unit.getTags());
 
         if (StringUtils.hasText(normalizedQuery)) {
-            score += fieldScore(item.getTitle(), normalizedQuery, 120, 60);
-            score += fieldScore(item.getSummary(), normalizedQuery, 45, 25);
-            score += fieldScore(item.getRawText(), normalizedQuery, 35, 20);
-            score += tokenFieldScore(item.getTitle(), queryTokens, 16, 8);
-            score += tokenFieldScore(item.getSummary(), queryTokens, 8, 4);
-            score += tokenFieldScore(item.getRawText(), queryTokens, 5, 2);
-            score += tokenScore(itemTags, queryTokens, 80, 35);
+            score += fieldScore(unit.getTitle(), normalizedQuery, 140, 75);
+            score += fieldScore(unit.getSummary(), normalizedQuery, 65, 35);
+            score += fieldScore(unit.getSourceQuote(), normalizedQuery, 35, 20);
+            score += tokenFieldScore(unit.getTitle(), queryTokens, 18, 9);
+            score += tokenFieldScore(unit.getSummary(), queryTokens, 10, 5);
+            score += tokenFieldScore(unit.getSourceQuote(), queryTokens, 5, 2);
+            score += tokenScore(unitTags, queryTokens, 80, 35);
+            score += slotScore(unit.getSlots(), normalizedQuery, queryTokens);
         }
 
         for (String tag : tags) {
-            if (itemTags.contains(tag)) {
+            if (unitTags.contains(tag)) {
                 score += 60;
             }
         }
-        if (item.getType() != null && itemTypes.contains(item.getType().name())) {
+        if (unit.getType() != null && itemTypes.contains(unit.getType().name())) {
             score += 90;
         }
 
+        return score;
+    }
+
+    private int slotScore(Set<MemorySlot> slots, String normalizedQuery, List<String> queryTokens) {
+        if (slots == null || slots.isEmpty()) {
+            return 0;
+        }
+
+        int score = 0;
+        for (MemorySlot slot : slots) {
+            score += fieldScore(slot.getNormalizedValue(), normalizedQuery, 150, 85);
+            score += fieldScore(slot.getValue(), normalizedQuery, 130, 75);
+            score += tokenFieldScore(slot.getNormalizedValue(), queryTokens, 24, 12);
+            score += tokenFieldScore(slot.getValue(), queryTokens, 22, 11);
+        }
         return score;
     }
 
@@ -424,7 +490,7 @@ public class InboxItemSearchService {
     }
 
     private String normalizeText(String text) {
-        return StringUtils.hasText(text) ? text.trim().toLowerCase(Locale.ROOT) : "";
+        return StringUtils.hasText(text) ? text.trim().toLowerCase(Locale.ROOT).replace('ё', 'е') : "";
     }
 
     private String relaxedTsQuery(String query) {
@@ -520,4 +586,6 @@ public class InboxItemSearchService {
         }
     }
 
+    private record ScoredMemoryUnit(MemoryUnit unit, int score) {
+    }
 }

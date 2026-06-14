@@ -1,6 +1,7 @@
 package ru.ravil.petproject.domain;
 
 import jakarta.persistence.CollectionTable;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
@@ -9,11 +10,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.CascadeType;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -27,21 +28,27 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.springframework.util.StringUtils;
 
 @Entity
-@Table(name = "inbox_items")
+@Table(name = "memory_units")
 @Getter
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class InboxItem {
+public class MemoryUnit {
 
     @Id
     private UUID id;
 
-    @Column(name = "raw_text", nullable = false, columnDefinition = "text")
-    private String rawText;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "inbox_item_id", nullable = false)
+    private InboxItem item;
 
-    @Column(name = "title")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false)
+    private MemoryUnitType type;
+
+    @Column(name = "title", nullable = false)
     private String title;
 
     @Column(name = "summary", columnDefinition = "text")
@@ -50,51 +57,34 @@ public class InboxItem {
     @Column(name = "search_text", columnDefinition = "text")
     private String searchText;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false)
-    private InboxItemType type;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
-    private InboxItemStatus status;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "source", nullable = false)
-    private InboxItemSource source;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "priority", nullable = false)
-    private InboxItemPriority priority;
+    @Column(name = "source_quote", columnDefinition = "text")
+    private String sourceQuote;
 
     @Column(name = "actionable", nullable = false)
     private boolean actionable;
 
-    @Column(name = "telegram_chat_id")
-    private Long telegramChatId;
+    @Column(name = "confidence", nullable = false)
+    private double confidence;
 
-    @Column(name = "telegram_message_id")
-    private Long telegramMessageId;
+    @Column(name = "occurred_at")
+    private OffsetDateTime occurredAt;
+
+    @Column(name = "due_at")
+    private OffsetDateTime dueAt;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "ai_metadata", columnDefinition = "jsonb")
     private Map<String, Object> aiMetadata;
 
     @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "inbox_item_tags", joinColumns = @JoinColumn(name = "item_id"))
+    @CollectionTable(name = "memory_unit_tags", joinColumns = @JoinColumn(name = "memory_unit_id"))
     @Column(name = "tag", nullable = false)
     @Setter(AccessLevel.NONE)
     private Set<String> tags = new LinkedHashSet<>();
 
-    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "unit", cascade = CascadeType.ALL, orphanRemoval = true)
     @Setter(AccessLevel.NONE)
-    private Set<InboxItemLink> links = new LinkedHashSet<>();
-
-    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Setter(AccessLevel.NONE)
-    private Set<MemoryUnit> memoryUnits = new LinkedHashSet<>();
-
-    @Column(name = "processed_at")
-    private OffsetDateTime processedAt;
+    private Set<MemorySlot> slots = new LinkedHashSet<>();
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
@@ -102,14 +92,12 @@ public class InboxItem {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    public InboxItem(String rawText, InboxItemSource source) {
+    public MemoryUnit(InboxItem item, MemoryUnitType type, String title) {
         this.id = UUID.randomUUID();
-        this.rawText = rawText;
-        this.source = source;
-        this.type = InboxItemType.NOTE;
-        this.status = InboxItemStatus.NEW;
-        this.priority = InboxItemPriority.MEDIUM;
-        this.actionable = false;
+        this.item = item;
+        this.type = type == null ? MemoryUnitType.NOTE : type;
+        this.title = StringUtils.hasText(title) ? title.trim() : "Untitled memory";
+        this.confidence = 1.0d;
     }
 
     @PrePersist
@@ -130,25 +118,31 @@ public class InboxItem {
         this.tags = tags == null ? new LinkedHashSet<>() : new LinkedHashSet<>(tags);
     }
 
-    public void addLink(String url, String domain) {
-        this.links.add(new InboxItemLink(this, url, domain));
-    }
-
-    public void addMemoryUnit(MemoryUnit memoryUnit) {
-        if (memoryUnit == null) {
+    public void addSlot(MemorySlot slot) {
+        if (slot == null) {
             return;
         }
-        memoryUnit.setItem(this);
-        this.memoryUnits.add(memoryUnit);
+        slot.setUnit(this);
+        this.slots.add(slot);
     }
 
     private void refreshSearchText() {
         searchText = joinSearchParts(
-                rawText,
                 title,
                 summary,
+                sourceQuote,
                 type == null ? null : type.name(),
                 tags.stream()
+                        .sorted(Comparator.naturalOrder())
+                        .collect(Collectors.joining(" ")),
+                slots.stream()
+                        .map(MemorySlot::getValue)
+                        .filter(StringUtils::hasText)
+                        .sorted(Comparator.naturalOrder())
+                        .collect(Collectors.joining(" ")),
+                slots.stream()
+                        .map(MemorySlot::getNormalizedValue)
+                        .filter(StringUtils::hasText)
                         .sorted(Comparator.naturalOrder())
                         .collect(Collectors.joining(" "))
         );
@@ -156,7 +150,7 @@ public class InboxItem {
 
     private String joinSearchParts(String... parts) {
         return java.util.Arrays.stream(parts)
-                .filter(part -> part != null && !part.isBlank())
+                .filter(StringUtils::hasText)
                 .collect(Collectors.joining(" "));
     }
 }

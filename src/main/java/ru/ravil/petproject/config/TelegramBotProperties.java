@@ -7,6 +7,13 @@ public record TelegramBotProperties(
         boolean enabled,
         String token,
         String username,
-        Long allowedChatId
+        Long allowedChatId,
+        TelegramIntentMode intentMode
 ) {
+
+    public TelegramBotProperties {
+        if (intentMode == null) {
+            intentMode = TelegramIntentMode.HYBRID_SAFE;
+        }
+    }
 }

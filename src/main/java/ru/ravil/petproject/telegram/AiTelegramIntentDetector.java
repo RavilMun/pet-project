@@ -30,14 +30,20 @@ public class AiTelegramIntentDetector {
             }
             SEARCH means the user is asking to find, recall, list, or answer from previously saved inbox items.
             CAPTURE means the user is adding a new note, wish, reminder, link, thought, idea, task, or fact to save.
-            Be conservative: if the user is stating a new desire or fact, choose CAPTURE.
+            Be conservative: if the user is stating a new desire, fact, observation, memory, result, purchase,
+            reading/watching activity, or conclusion, choose CAPTURE.
+            Questions inside a statement do not make it SEARCH. SEARCH requires the whole message to ask the assistant
+            to recall existing saved memory.
             Do not classify casual save phrases as SEARCH.
             Examples:
             "хочу посмотреть Мглу" -> {"intent":"CAPTURE","query":"","tags":[],"period":"ALL"}
             "напомни оплатить интернет завтра" -> {"intent":"CAPTURE","query":"","tags":[],"period":"ALL"}
+            "вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search" -> {"intent":"CAPTURE","query":"","tags":[],"period":"ALL"}
+            "купил кабель в DNS" -> {"intent":"CAPTURE","query":"","tags":[],"period":"ALL"}
             "а что там было про кухню?" -> {"intent":"SEARCH","query":"кухня","tags":[],"period":"ALL"}
             "где я писал про кресло" -> {"intent":"SEARCH","query":"кресло","tags":[],"period":"ALL"}
             "какие книги я хотел купить" -> {"intent":"SEARCH","query":"книги купить","tags":[],"period":"ALL"}
+            "где я купил кабель?" -> {"intent":"SEARCH","query":"купил кабель","tags":[],"period":"ALL"}
             "что я сохранял вчера" -> {"intent":"SEARCH","query":"","tags":[],"period":"YESTERDAY"}
             """;
 
@@ -50,7 +56,15 @@ public class AiTelegramIntentDetector {
     }
 
     public TelegramIntent detect(String text) {
-        if (!StringUtils.hasText(text) || !shouldAskAi(text)) {
+        return detect(text, false);
+    }
+
+    public TelegramIntent detectAny(String text) {
+        return detect(text, true);
+    }
+
+    private TelegramIntent detect(String text, boolean forceAi) {
+        if (!StringUtils.hasText(text) || (!forceAi && !shouldAskAi(text))) {
             return TelegramIntent.unknown();
         }
 

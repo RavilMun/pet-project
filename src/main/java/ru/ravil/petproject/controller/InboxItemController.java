@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.EmbeddingBackfillResponse;
 import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.dto.UpdateInboxItemRequest;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemService;
@@ -61,16 +62,16 @@ public class InboxItemController {
     }
 
     @GetMapping("/search")
-    public List<InboxItemResponse> search(
+    public List<MemoryUnitResponse> search(
             @RequestParam("q") String query,
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) int limit
     ) {
         SearchQuery parsedQuery = searchQueryParser.parse(query);
         if (parsedQuery.type() == SearchQueryType.RECENT) {
-            return inboxItemService.listRecent(limit);
+            return inboxItemSearchService.recent(limit);
         }
         if (parsedQuery.type() == SearchQueryType.TODAY) {
-            return inboxItemService.listToday(limit);
+            return inboxItemSearchService.today(limit);
         }
         if (parsedQuery.type() == SearchQueryType.SEARCH) {
             return inboxItemSearchService.search(

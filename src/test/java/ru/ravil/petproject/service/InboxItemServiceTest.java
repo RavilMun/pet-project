@@ -28,16 +28,25 @@ import org.springframework.data.domain.PageRequest;
 import ru.ravil.petproject.ai.AiClassificationResult;
 import ru.ravil.petproject.ai.AiClassificationService;
 import ru.ravil.petproject.ai.AiEmbeddingService;
+import ru.ravil.petproject.ai.AiMemorySlotResult;
+import ru.ravil.petproject.ai.AiMemoryUnitExtractionResult;
+import ru.ravil.petproject.ai.AiMemoryUnitExtractionService;
+import ru.ravil.petproject.ai.AiMemoryUnitResult;
 import ru.ravil.petproject.ai.EmbeddingResult;
 import ru.ravil.petproject.domain.InboxItem;
 import ru.ravil.petproject.domain.InboxItemPriority;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemStatus;
 import ru.ravil.petproject.domain.InboxItemType;
+import ru.ravil.petproject.domain.MemorySlotRole;
+import ru.ravil.petproject.domain.MemorySlotValueType;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.domain.MemoryUnitType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
 import ru.ravil.petproject.dto.UpdateInboxItemRequest;
 import ru.ravil.petproject.repository.InboxItemRepository;
+import ru.ravil.petproject.repository.MemoryUnitRepository;
 
 @ExtendWith(MockitoExtension.class)
 class InboxItemServiceTest {
@@ -46,7 +55,13 @@ class InboxItemServiceTest {
     private InboxItemRepository inboxItemRepository;
 
     @Mock
+    private MemoryUnitRepository memoryUnitRepository;
+
+    @Mock
     private AiClassificationService aiClassificationService;
+
+    @Mock
+    private AiMemoryUnitExtractionService aiMemoryUnitExtractionService;
 
     @Mock
     private ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
@@ -59,11 +74,14 @@ class InboxItemServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(aiClassificationService.classify(any())).thenReturn(Optional.empty());
+        lenient().when(aiMemoryUnitExtractionService.extract(any())).thenReturn(Optional.empty());
         inboxItemService = new InboxItemService(
                 inboxItemRepository,
+                memoryUnitRepository,
                 new InboxItemMapper(),
                 new LinkExtractor(),
                 aiClassificationService,
+                aiMemoryUnitExtractionService,
                 aiEmbeddingServiceProvider
         );
     }
@@ -87,7 +105,7 @@ class InboxItemServiceTest {
 
         when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
             InboxItem item = invocation.getArgument(0);
-            invokeLifecycleMethod(item, "prePersist");
+            persistGraph(item);
             return item;
         });
 
@@ -109,6 +127,10 @@ class InboxItemServiceTest {
         verify(inboxItemRepository).save(captor.capture());
         assertThat(captor.getValue().getSource()).isEqualTo(InboxItemSource.MANUAL);
         assertThat(captor.getValue().getSearchText()).contains("remember spring ai docs", "NOTE");
+        assertThat(captor.getValue().getMemoryUnits()).hasSize(1);
+        MemoryUnit memoryUnit = captor.getValue().getMemoryUnits().iterator().next();
+        assertThat(memoryUnit.getTitle()).isEqualTo("remember spring ai docs");
+        assertThat(memoryUnit.getType()).isEqualTo(MemoryUnitType.NOTE);
     }
 
     @Test
@@ -130,7 +152,7 @@ class InboxItemServiceTest {
 
         when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
             InboxItem item = invocation.getArgument(0);
-            invokeLifecycleMethod(item, "prePersist");
+            persistGraph(item);
             return item;
         });
 
@@ -165,8 +187,7 @@ class InboxItemServiceTest {
 
         when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
             InboxItem item = invocation.getArgument(0);
-            invokeLifecycleMethod(item, "prePersist");
-            item.getLinks().forEach(link -> invokeLifecycleMethod(link, "prePersist"));
+            persistGraph(item);
             return item;
         });
 
@@ -198,8 +219,7 @@ class InboxItemServiceTest {
 
         when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
             InboxItem item = invocation.getArgument(0);
-            invokeLifecycleMethod(item, "prePersist");
-            item.getLinks().forEach(link -> invokeLifecycleMethod(link, "prePersist"));
+            persistGraph(item);
             return item;
         });
 
@@ -237,7 +257,7 @@ class InboxItemServiceTest {
                 .thenReturn(Optional.of(classification));
         when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
             InboxItem item = invocation.getArgument(0);
-            invokeLifecycleMethod(item, "prePersist");
+            persistGraph(item);
             return item;
         });
 
@@ -258,6 +278,80 @@ class InboxItemServiceTest {
         assertThat(captor.getValue().getAiMetadata()).containsEntry("classifier", "ai-classification-v1");
         assertThat(captor.getValue().getSearchText())
                 .contains("need to choose a chair under 25k", "Choose a chair under 25k", "furniture");
+    }
+
+    @Test
+    void createStoresExtractedMemoryUnitsWhenAiExtractionIsAvailable() {
+        CreateInboxItemRequest request = new CreateInboxItemRequest(
+                "В субботу ездили в Выборг. Поднялись на башню Святого Олафа.",
+                null,
+                null,
+                null,
+                InboxItemSource.TELEGRAM,
+                null,
+                null,
+                null,
+                null,
+                Set.of()
+        );
+        when(aiClassificationService.classify(request.rawText()))
+                .thenReturn(Optional.of(classification("Поездка в Выборг", null, InboxItemType.NOTE, Set.of("выборг"), InboxItemPriority.MEDIUM, false)));
+        when(aiMemoryUnitExtractionService.extract(request.rawText()))
+                .thenReturn(Optional.of(new AiMemoryUnitExtractionResult(List.of(
+                        new AiMemoryUnitResult(
+                                MemoryUnitType.EVENT,
+                                "Поездка в Выборг",
+                                "Пользователь ездил в Выборг в субботу.",
+                                Set.of("выборг", "поездка"),
+                                false,
+                                0.95,
+                                "В субботу ездили в Выборг",
+                                List.of(
+                                        new AiMemorySlotResult(MemorySlotRole.ACTION, "ездили", "ездить", MemorySlotValueType.TEXT, 0.9),
+                                        new AiMemorySlotResult(MemorySlotRole.PLACE, "Выборг", "выборг", MemorySlotValueType.TEXT, 0.98),
+                                        new AiMemorySlotResult(MemorySlotRole.TIME, "в субботу", "суббота", MemorySlotValueType.TEXT, 0.85)
+                                ),
+                                Map.of("places", List.of("Выборг"))
+                        ),
+                        new AiMemoryUnitResult(
+                                MemoryUnitType.EVENT,
+                                "Посещение башни Святого Олафа",
+                                "Во время поездки поднимались на башню Святого Олафа.",
+                                Set.of("выборг", "башня святого олафа"),
+                                false,
+                                0.9,
+                                "Поднялись на башню Святого Олафа",
+                                List.of(
+                                        new AiMemorySlotResult(MemorySlotRole.ACTION, "поднялись", "подняться", MemorySlotValueType.TEXT, 0.9),
+                                        new AiMemorySlotResult(MemorySlotRole.PLACE, "башня Святого Олафа", "башня святого олафа", MemorySlotValueType.TEXT, 0.95)
+                                ),
+                                Map.of("places", List.of("Башня Святого Олафа"))
+                        )
+                ))));
+        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
+            InboxItem item = invocation.getArgument(0);
+            persistGraph(item);
+            return item;
+        });
+
+        inboxItemService.create(request);
+
+        ArgumentCaptor<InboxItem> captor = ArgumentCaptor.forClass(InboxItem.class);
+        verify(inboxItemRepository).save(captor.capture());
+        assertThat(captor.getValue().getMemoryUnits())
+                .extracting(MemoryUnit::getTitle)
+                .containsExactlyInAnyOrder("Поездка в Выборг", "Посещение башни Святого Олафа");
+        assertThat(captor.getValue().getMemoryUnits())
+                .extracting(MemoryUnit::getType)
+                .containsOnly(MemoryUnitType.EVENT);
+        assertThat(captor.getValue().getMemoryUnits())
+                .flatExtracting(MemoryUnit::getSlots)
+                .extracting(slot -> slot.getRole().name() + ":" + slot.getNormalizedValue())
+                .contains(
+                        "PLACE:выборг",
+                        "PLACE:башня святого олафа",
+                        "TIME:суббота"
+                );
     }
 
     @Test
@@ -282,10 +376,10 @@ class InboxItemServiceTest {
                 .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-embedding")));
         when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
             InboxItem item = invocation.getArgument(0);
-            invokeLifecycleMethod(item, "prePersist");
+            persistGraph(item);
             return item;
         });
-        when(inboxItemRepository.updateEmbedding(
+        when(memoryUnitRepository.updateEmbedding(
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("[0.1,0.2]"),
                 org.mockito.ArgumentMatchers.eq("test-embedding"),
@@ -295,8 +389,8 @@ class InboxItemServiceTest {
         InboxItemResponse response = inboxItemService.create(request);
 
         assertThat(response.rawText()).isEqualTo("Посмотреть доклад про Kafka");
-        verify(inboxItemRepository).updateEmbedding(
-                org.mockito.ArgumentMatchers.eq(response.id()),
+        verify(memoryUnitRepository).updateEmbedding(
+                org.mockito.ArgumentMatchers.any(UUID.class),
                 org.mockito.ArgumentMatchers.eq("[0.1,0.2]"),
                 org.mockito.ArgumentMatchers.eq("test-embedding"),
                 org.mockito.ArgumentMatchers.any(OffsetDateTime.class)
@@ -473,6 +567,15 @@ class InboxItemServiceTest {
         InboxItem item = new InboxItem(rawText, InboxItemSource.MANUAL);
         invokeLifecycleMethod(item, "prePersist");
         return item;
+    }
+
+    private static void persistGraph(InboxItem item) {
+        invokeLifecycleMethod(item, "prePersist");
+        item.getLinks().forEach(link -> invokeLifecycleMethod(link, "prePersist"));
+        item.getMemoryUnits().forEach(unit -> {
+            unit.getSlots().forEach(slot -> invokeLifecycleMethod(slot, "prePersist"));
+            invokeLifecycleMethod(unit, "prePersist");
+        });
     }
 
     private static AiClassificationResult classification(

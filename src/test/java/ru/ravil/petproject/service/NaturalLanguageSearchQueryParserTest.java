@@ -185,4 +185,11 @@ class NaturalLanguageSearchQueryParserTest {
     void returnsUnknownForCaptureText() {
         assertThat(parser.parse("хочу посмотреть фильм Мгла").type()).isEqualTo(SearchQueryType.UNKNOWN);
     }
+
+    @Test
+    void returnsUnknownForStatementWithAboutWord() {
+        SearchQuery query = parser.parse("Вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search");
+
+        assertThat(query.type()).isEqualTo(SearchQueryType.UNKNOWN);
+    }
 }

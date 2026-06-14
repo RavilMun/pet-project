@@ -19,7 +19,9 @@ import ru.ravil.petproject.domain.InboxItemPriority;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemStatus;
 import ru.ravil.petproject.domain.InboxItemType;
-import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.domain.MemoryUnitType;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.repository.InboxItemRepository;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
@@ -146,7 +148,7 @@ class TelegramSearchScenarioIntegrationTest {
 
         List<String> results = inboxItemSearchService.search(intent.query(), intent.itemTypes(), intent.tags(), intent.period(), 10)
                 .stream()
-                .map(InboxItemResponse::rawText)
+                .map(MemoryUnitResponse::sourceRawText)
                 .toList();
 
         assertThat(results).containsAll(expectedTexts);
@@ -234,9 +236,24 @@ class TelegramSearchScenarioIntegrationTest {
         item.setStatus(InboxItemStatus.PROCESSED);
         item.setPriority(InboxItemPriority.MEDIUM);
         item.setTags(tags);
+        MemoryUnit unit = new MemoryUnit(item, toMemoryUnitType(type), title);
+        unit.setSummary(summary);
+        unit.setSourceQuote(rawText);
+        unit.setTags(tags);
+        unit.setActionable(type == InboxItemType.TASK || type == InboxItemType.REMINDER);
+        unit.setConfidence(1.0d);
+        item.addMemoryUnit(unit);
         InboxItem saved = inboxItemRepository.saveAndFlush(item);
         saved.setCreatedAt(createdAt);
         saved.setUpdatedAt(createdAt);
         inboxItemRepository.saveAndFlush(saved);
+    }
+
+    private static MemoryUnitType toMemoryUnitType(InboxItemType type) {
+        try {
+            return MemoryUnitType.valueOf(type.name());
+        } catch (IllegalArgumentException exception) {
+            return MemoryUnitType.NOTE;
+        }
     }
 }

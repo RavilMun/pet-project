@@ -100,13 +100,6 @@ public class NaturalLanguageSearchQueryParser {
             }
         }
 
-        if (normalized.contains(" про ")) {
-            String query = cleanQuery(normalized.substring(normalized.lastIndexOf(" про ") + 5));
-            if (StringUtils.hasText(query)) {
-                return search(query, normalized);
-            }
-        }
-
         return SearchQuery.unknown();
     }
 

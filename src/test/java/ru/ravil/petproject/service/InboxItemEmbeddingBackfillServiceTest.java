@@ -22,13 +22,15 @@ import ru.ravil.petproject.ai.AiEmbeddingService;
 import ru.ravil.petproject.ai.EmbeddingResult;
 import ru.ravil.petproject.domain.InboxItem;
 import ru.ravil.petproject.domain.InboxItemSource;
-import ru.ravil.petproject.repository.InboxItemRepository;
+import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.domain.MemoryUnitType;
+import ru.ravil.petproject.repository.MemoryUnitRepository;
 
 @ExtendWith(MockitoExtension.class)
 class InboxItemEmbeddingBackfillServiceTest {
 
     @Mock
-    private InboxItemRepository inboxItemRepository;
+    private MemoryUnitRepository memoryUnitRepository;
 
     @Mock
     private AiEmbeddingService aiEmbeddingService;
@@ -37,48 +39,55 @@ class InboxItemEmbeddingBackfillServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new InboxItemEmbeddingBackfillService(inboxItemRepository, aiEmbeddingService);
+        service = new InboxItemEmbeddingBackfillService(memoryUnitRepository, aiEmbeddingService);
     }
 
     @Test
-    void backfillsMissingEmbeddings() {
-        InboxItem item = persistedItem("Kafka notes");
-        item.setTitle("Kafka");
-        item.setTags(Set.of("kafka"));
-        invokeLifecycleMethod(item, "preUpdate");
+    void backfillsMissingMemoryUnitEmbeddings() {
+        MemoryUnit unit = persistedUnit("Kafka notes", "Kafka", MemoryUnitType.LEARNING, Set.of("kafka"));
 
-        when(inboxItemRepository.findIdsMissingEmbedding(PageRequest.of(0, 2)))
-                .thenReturn(List.of(item.getId()));
-        when(inboxItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
-        when(aiEmbeddingService.embed(item.getSearchText()))
+        when(memoryUnitRepository.findIdsMissingEmbedding(PageRequest.of(0, 2)))
+                .thenReturn(List.of(unit.getId()));
+        when(memoryUnitRepository.findById(unit.getId())).thenReturn(Optional.of(unit));
+        when(aiEmbeddingService.embed(unit.getSearchText()))
                 .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-model")));
-        when(inboxItemRepository.updateEmbedding(eq(item.getId()), eq("[0.1,0.2]"), eq("test-model"), any(OffsetDateTime.class)))
+        when(memoryUnitRepository.updateEmbedding(eq(unit.getId()), eq("[0.1,0.2]"), eq("test-model"), any(OffsetDateTime.class)))
                 .thenReturn(1);
 
         int updated = service.backfillMissingEmbeddings(2);
 
         assertThat(updated).isEqualTo(1);
-        verify(inboxItemRepository).updateEmbedding(eq(item.getId()), eq("[0.1,0.2]"), eq("test-model"), any(OffsetDateTime.class));
+        verify(memoryUnitRepository).updateEmbedding(eq(unit.getId()), eq("[0.1,0.2]"), eq("test-model"), any(OffsetDateTime.class));
     }
 
     @Test
-    void skipsItemsWhenEmbeddingServiceReturnsEmpty() {
-        InboxItem item = persistedItem("Kafka notes");
-        when(inboxItemRepository.findIdsMissingEmbedding(PageRequest.of(0, 25)))
-                .thenReturn(List.of(item.getId()));
-        when(inboxItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
-        when(aiEmbeddingService.embed(item.getSearchText())).thenReturn(Optional.empty());
+    void skipsUnitsWhenEmbeddingServiceReturnsEmpty() {
+        MemoryUnit unit = persistedUnit("Kafka notes", "Kafka", MemoryUnitType.LEARNING, Set.of("kafka"));
+        when(memoryUnitRepository.findIdsMissingEmbedding(PageRequest.of(0, 25)))
+                .thenReturn(List.of(unit.getId()));
+        when(memoryUnitRepository.findById(unit.getId())).thenReturn(Optional.of(unit));
+        when(aiEmbeddingService.embed(unit.getSearchText())).thenReturn(Optional.empty());
 
         int updated = service.backfillMissingEmbeddings(null);
 
         assertThat(updated).isZero();
-        verify(inboxItemRepository, never()).updateEmbedding(any(), any(), any(), any());
+        verify(memoryUnitRepository, never()).updateEmbedding(any(), any(), any(), any());
     }
 
-    private static InboxItem persistedItem(String rawText) {
+    private static MemoryUnit persistedUnit(
+            String rawText,
+            String title,
+            MemoryUnitType type,
+            Set<String> tags
+    ) {
         InboxItem item = new InboxItem(rawText, InboxItemSource.MANUAL);
         invokeLifecycleMethod(item, "prePersist");
-        return item;
+        MemoryUnit unit = new MemoryUnit(item, type, title);
+        unit.setSummary(rawText);
+        unit.setSourceQuote(rawText);
+        unit.setTags(tags);
+        invokeLifecycleMethod(unit, "prePersist");
+        return unit;
     }
 
     private static void invokeLifecycleMethod(Object item, String methodName) {

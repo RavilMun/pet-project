@@ -257,3 +257,272 @@ databaseChangeLog:
               create index idx_inbox_items_embedding_hnsw
               on inbox_items
               using hnsw (embedding vector_cosine_ops)
+
+  - changeSet:
+      id: 008-create-memory-units
+      author: codex
+      changes:
+        - sql:
+            sql: create extension if not exists pgcrypto
+        - createTable:
+            tableName: memory_units
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: inbox_item_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: summary
+                  type: text
+              - column:
+                  name: search_text
+                  type: text
+              - column:
+                  name: source_quote
+                  type: text
+              - column:
+                  name: actionable
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: confidence
+                  type: double precision
+                  defaultValueNumeric: 1.0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occurred_at
+                  type: timestamp with time zone
+              - column:
+                  name: due_at
+                  type: timestamp with time zone
+              - column:
+                  name: ai_metadata
+                  type: jsonb
+              - column:
+                  name: embedding
+                  type: vector(1536)
+              - column:
+                  name: embedding_model
+                  type: varchar(128)
+              - column:
+                  name: embedded_at
+                  type: timestamp with time zone
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: memory_units
+            baseColumnNames: inbox_item_id
+            referencedTableName: inbox_items
+            referencedColumnNames: id
+            constraintName: fk_memory_units_inbox_item
+            onDelete: CASCADE
+        - createTable:
+            tableName: memory_unit_tags
+            columns:
+              - column:
+                  name: memory_unit_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tag
+                  type: varchar(128)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: memory_unit_tags
+            baseColumnNames: memory_unit_id
+            referencedTableName: memory_units
+            referencedColumnNames: id
+            constraintName: fk_memory_unit_tags_unit
+            onDelete: CASCADE
+        - addPrimaryKey:
+            tableName: memory_unit_tags
+            columnNames: memory_unit_id, tag
+            constraintName: pk_memory_unit_tags
+        - sql:
+            sql: |
+              insert into memory_units (
+                  id,
+                  inbox_item_id,
+                  type,
+                  title,
+                  summary,
+                  search_text,
+                  source_quote,
+                  actionable,
+                  confidence,
+                  ai_metadata,
+                  created_at,
+                  updated_at
+              )
+              select
+                  gen_random_uuid(),
+                  item.id,
+                  item.type,
+                  coalesce(nullif(item.title, ''), left(item.raw_text, 120)),
+                  item.summary,
+                  item.search_text,
+                  item.raw_text,
+                  item.actionable,
+                  0.5,
+                  jsonb_build_object('source', 'inbox-item-backfill'),
+                  item.created_at,
+                  item.updated_at
+              from inbox_items item
+        - sql:
+            sql: |
+              insert into memory_unit_tags (memory_unit_id, tag)
+              select unit.id, tag.tag
+              from memory_units unit
+              join inbox_item_tags tag on tag.item_id = unit.inbox_item_id
+        - createIndex:
+            tableName: memory_units
+            indexName: idx_memory_units_inbox_item_id
+            columns:
+              - column:
+                  name: inbox_item_id
+        - createIndex:
+            tableName: memory_units
+            indexName: idx_memory_units_type
+            columns:
+              - column:
+                  name: type
+        - createIndex:
+            tableName: memory_units
+            indexName: idx_memory_units_created_at
+            columns:
+              - column:
+                  name: created_at
+        - createIndex:
+            tableName: memory_unit_tags
+            indexName: idx_memory_unit_tags_tag
+            columns:
+              - column:
+                  name: tag
+        - sql:
+            sql: |
+              create index idx_memory_units_search_text_fts
+              on memory_units
+              using gin (to_tsvector('russian', coalesce(search_text, '')))
+        - sql:
+            sql: |
+              create index idx_memory_units_search_text_simple_fts
+              on memory_units
+              using gin (to_tsvector('simple', coalesce(search_text, '')))
+        - sql:
+            sql: |
+              create index idx_memory_units_embedding_hnsw
+              on memory_units
+              using hnsw (embedding vector_cosine_ops)
+
+  - changeSet:
+      id: 009-create-memory-slots
+      author: codex
+      changes:
+        - createTable:
+            tableName: memory_slots
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: memory_unit_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: value
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: normalized_value
+                  type: text
+              - column:
+                  name: value_type
+                  type: varchar(64)
+                  defaultValue: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: confidence
+                  type: double precision
+                  defaultValueNumeric: 1.0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: memory_slots
+            baseColumnNames: memory_unit_id
+            referencedTableName: memory_units
+            referencedColumnNames: id
+            constraintName: fk_memory_slots_unit
+            onDelete: CASCADE
+        - createIndex:
+            tableName: memory_slots
+            indexName: idx_memory_slots_unit_id
+            columns:
+              - column:
+                  name: memory_unit_id
+        - createIndex:
+            tableName: memory_slots
+            indexName: idx_memory_slots_role
+            columns:
+              - column:
+                  name: role
+        - createIndex:
+            tableName: memory_slots
+            indexName: idx_memory_slots_normalized_value
+            columns:
+              - column:
+                  name: normalized_value
+        - sql:
+            sql: |
+              create index idx_memory_slots_value_fts
+              on memory_slots
+              using gin (to_tsvector('russian', coalesce(value, '')))
+        - sql:
+            sql: |
+              create index idx_memory_slots_normalized_value_fts
+              on memory_slots
+              using gin (to_tsvector('simple', coalesce(normalized_value, '')))

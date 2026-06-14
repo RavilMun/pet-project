@@ -13,7 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import ru.ravil.petproject.TestcontainersConfiguration;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
-import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemType;
 import ru.ravil.petproject.repository.InboxItemRepository;
@@ -73,10 +73,10 @@ class LiveOpenAiSearchIntegrationTest {
         );
         backfillAll();
 
-        List<InboxItemResponse> results = inboxItemSearchService.search("что нравится Маше?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        List<MemoryUnitResponse> results = inboxItemSearchService.search("что нравится Маше?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
 
         assertThat(results).isNotEmpty();
-        assertThat(results.get(0).rawText()).isEqualTo("Маше нравятся цветы");
+        assertThat(results.get(0).sourceRawText()).isEqualTo("Маше нравятся цветы");
     }
 
     @Test
@@ -97,11 +97,11 @@ class LiveOpenAiSearchIntegrationTest {
         );
         backfillAll();
 
-        List<InboxItemResponse> results = inboxItemSearchService.search("что я хотел посмотреть?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        List<MemoryUnitResponse> results = inboxItemSearchService.search("что я хотел посмотреть?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
 
         assertThat(results).isNotEmpty();
         assertThat(results)
-                .extracting(InboxItemResponse::rawText)
+                .extracting(MemoryUnitResponse::sourceRawText)
                 .contains("Хочу посмотреть фильм Мгла");
     }
 
@@ -123,10 +123,10 @@ class LiveOpenAiSearchIntegrationTest {
         );
         backfillAll();
 
-        List<InboxItemResponse> results = inboxItemSearchService.search("что купить для дома?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        List<MemoryUnitResponse> results = inboxItemSearchService.search("что купить для дома?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
 
         assertThat(results).isNotEmpty();
-        assertThat(results.get(0).rawText()).isEqualTo("Купить узкую светлую обувницу в прихожую");
+        assertThat(results.get(0).sourceRawText()).isEqualTo("Купить узкую светлую обувницу в прихожую");
     }
 
     @Test
@@ -147,10 +147,10 @@ class LiveOpenAiSearchIntegrationTest {
         );
         backfillAll();
 
-        List<InboxItemResponse> results = inboxItemSearchService.search("что приготовить из картохи?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        List<MemoryUnitResponse> results = inboxItemSearchService.search("что приготовить из картохи?", Set.of(), Set.of(), SearchPeriod.ALL, 10);
 
         assertThat(results).isNotEmpty();
-        assertThat(results.get(0).rawText()).isEqualTo("Рецепт картохи: запечь с чесноком");
+        assertThat(results.get(0).sourceRawText()).isEqualTo("Рецепт картохи: запечь с чесноком");
     }
 
     @Test
@@ -171,13 +171,13 @@ class LiveOpenAiSearchIntegrationTest {
         );
         backfillAll();
 
-        List<InboxItemResponse> projectResults = inboxItemSearchService.search("какие идеи я записывал про pet project", Set.of(), Set.of(), SearchPeriod.ALL, 10);
-        List<InboxItemResponse> kafkaResults = inboxItemSearchService.search("что я сохранял про Kafka", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        List<MemoryUnitResponse> projectResults = inboxItemSearchService.search("какие идеи я записывал про pet project", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+        List<MemoryUnitResponse> kafkaResults = inboxItemSearchService.search("что я сохранял про Kafka", Set.of(), Set.of(), SearchPeriod.ALL, 10);
 
         assertThat(projectResults).isNotEmpty();
-        assertThat(projectResults.get(0).rawText()).isEqualTo("Идея для pet project: гибридный поиск");
+        assertThat(projectResults.get(0).sourceRawText()).isEqualTo("Идея для pet project: гибридный поиск");
         assertThat(kafkaResults).isNotEmpty();
-        assertThat(kafkaResults.get(0).rawText()).isEqualTo("Посмотреть доклад про Kafka");
+        assertThat(kafkaResults.get(0).sourceRawText()).isEqualTo("Посмотреть доклад про Kafka");
     }
 
     private void seed(
