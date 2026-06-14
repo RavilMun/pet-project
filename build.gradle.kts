@@ -35,6 +35,23 @@ dependencies {
     testAnnotationProcessor("org.projectlombok:lombok")
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("live-openai")
+    }
+}
+
+val liveTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs OpenAI-backed live smoke tests only when explicitly enabled."
+    useJUnitPlatform {
+        includeTags("live-openai")
+    }
+    onlyIf {
+        val propertyEnabled = providers.gradleProperty("runLiveGptTests").orNull == "true"
+        val envEnabled = System.getenv("RUN_LIVE_GPT_TESTS") == "true"
+        propertyEnabled || envEnabled
+    }
+    systemProperty("run.live.gpt.tests", "true")
+    shouldRunAfter(tasks.test)
 }

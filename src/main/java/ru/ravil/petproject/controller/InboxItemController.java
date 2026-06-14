@@ -16,18 +16,35 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
+import ru.ravil.petproject.dto.EmbeddingBackfillResponse;
 import ru.ravil.petproject.dto.InboxItemResponse;
 import ru.ravil.petproject.dto.UpdateInboxItemRequest;
+import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemService;
+import ru.ravil.petproject.service.InboxItemSearchService;
+import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
+import ru.ravil.petproject.service.SearchQuery;
+import ru.ravil.petproject.service.SearchQueryType;
 
 @RestController
 @RequestMapping("/api/inbox-items")
 public class InboxItemController {
 
     private final InboxItemService inboxItemService;
+    private final InboxItemSearchService inboxItemSearchService;
+    private final NaturalLanguageSearchQueryParser searchQueryParser;
+    private final InboxItemEmbeddingBackfillService embeddingBackfillService;
 
-    public InboxItemController(InboxItemService inboxItemService) {
+    public InboxItemController(
+            InboxItemService inboxItemService,
+            InboxItemSearchService inboxItemSearchService,
+            NaturalLanguageSearchQueryParser searchQueryParser,
+            InboxItemEmbeddingBackfillService embeddingBackfillService
+    ) {
         this.inboxItemService = inboxItemService;
+        this.inboxItemSearchService = inboxItemSearchService;
+        this.searchQueryParser = searchQueryParser;
+        this.embeddingBackfillService = embeddingBackfillService;
     }
 
     @PostMapping
@@ -41,6 +58,37 @@ public class InboxItemController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit
     ) {
         return inboxItemService.listRecent(limit);
+    }
+
+    @GetMapping("/search")
+    public List<InboxItemResponse> search(
+            @RequestParam("q") String query,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(50) int limit
+    ) {
+        SearchQuery parsedQuery = searchQueryParser.parse(query);
+        if (parsedQuery.type() == SearchQueryType.RECENT) {
+            return inboxItemService.listRecent(limit);
+        }
+        if (parsedQuery.type() == SearchQueryType.TODAY) {
+            return inboxItemService.listToday(limit);
+        }
+        if (parsedQuery.type() == SearchQueryType.SEARCH) {
+            return inboxItemSearchService.search(
+                    parsedQuery.text(),
+                    parsedQuery.itemTypes(),
+                    parsedQuery.tags(),
+                    parsedQuery.period(),
+                    limit
+            );
+        }
+        return inboxItemSearchService.search(query, limit);
+    }
+
+    @PostMapping("/embeddings/backfill")
+    public EmbeddingBackfillResponse backfillEmbeddings(
+            @RequestParam(defaultValue = "25") @Min(1) @Max(100) int limit
+    ) {
+        return new EmbeddingBackfillResponse(embeddingBackfillService.backfillMissingEmbeddings(limit));
     }
 
     @GetMapping("/{id}")

@@ -13,11 +13,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import ru.ravil.petproject.config.TelegramBotProperties;
-import ru.ravil.petproject.domain.InboxItemPriority;
 import ru.ravil.petproject.domain.InboxItemSource;
 import ru.ravil.petproject.domain.InboxItemType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
+import ru.ravil.petproject.service.AiProcessingUnavailableException;
+import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
 
@@ -31,7 +32,11 @@ public class TelegramBotPollingService {
     private final TelegramBotProperties properties;
     private final InboxItemService inboxItemService;
     private final InboxItemSearchService inboxItemSearchService;
-    private final TelegramIntentDetector telegramIntentDetector;
+    private final CommandTelegramIntentDetector commandTelegramIntentDetector;
+    private final RuleBasedTelegramIntentDetector ruleBasedTelegramIntentDetector;
+    private final AiTelegramIntentDetector aiTelegramIntentDetector;
+    private final TelegramSearchResponseFormatter searchResponseFormatter;
+    private final InboxItemEmbeddingBackfillService embeddingBackfillService;
     private final AtomicBoolean polling = new AtomicBoolean(false);
     private final AtomicLong nextOffset = new AtomicLong(0);
 
@@ -40,13 +45,21 @@ public class TelegramBotPollingService {
             TelegramBotProperties properties,
             InboxItemService inboxItemService,
             InboxItemSearchService inboxItemSearchService,
-            TelegramIntentDetector telegramIntentDetector
+            CommandTelegramIntentDetector commandTelegramIntentDetector,
+            RuleBasedTelegramIntentDetector ruleBasedTelegramIntentDetector,
+            AiTelegramIntentDetector aiTelegramIntentDetector,
+            TelegramSearchResponseFormatter searchResponseFormatter,
+            InboxItemEmbeddingBackfillService embeddingBackfillService
     ) {
         this.telegramApiClient = telegramApiClient;
         this.properties = properties;
         this.inboxItemService = inboxItemService;
         this.inboxItemSearchService = inboxItemSearchService;
-        this.telegramIntentDetector = telegramIntentDetector;
+        this.commandTelegramIntentDetector = commandTelegramIntentDetector;
+        this.ruleBasedTelegramIntentDetector = ruleBasedTelegramIntentDetector;
+        this.aiTelegramIntentDetector = aiTelegramIntentDetector;
+        this.searchResponseFormatter = searchResponseFormatter;
+        this.embeddingBackfillService = embeddingBackfillService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -101,50 +114,44 @@ public class TelegramBotPollingService {
             return;
         }
 
-        if (normalizedText.equals("/start")) {
-            telegramApiClient.sendMessage(chatId, "Готов сохранять сообщения в inbox. Просто отправь мне текст.");
-            return;
-        }
-        if (normalizedText.equals("/help")) {
-            telegramApiClient.sendMessage(chatId, "Отправь любой текст, и я сохраню его в inbox.\n/recent - последние записи\n/today - записи за сегодня\n/search текст - поиск по inbox\n/type TYPE - изменить тип последней записи\n/whoami - показать Telegram chat id");
-            return;
-        }
-        if (normalizedText.equals("/recent")) {
-            telegramApiClient.sendMessage(chatId, formatItems("Последние записи", inboxItemService.listRecent(5)));
-            return;
-        }
-        if (normalizedText.equals("/today")) {
-            telegramApiClient.sendMessage(chatId, formatItems("Сегодня", inboxItemService.listToday(10)));
-            return;
-        }
-        if (normalizedText.equals("/search") || normalizedText.startsWith("/search ")) {
-            handleSearch(chatId, normalizedText);
-            return;
-        }
         if (normalizedText.equals("/type") || normalizedText.startsWith("/type ")) {
             handleType(chatId, normalizedText);
             return;
         }
-
-        TelegramIntent intent = telegramIntentDetector.detect(normalizedText);
-        if (handleIntent(chatId, intent)) {
+        if (normalizedText.equals("/embeddings") || normalizedText.startsWith("/embeddings ")) {
+            handleEmbeddings(chatId, normalizedText);
             return;
         }
 
-        InboxItemResponse savedItem = inboxItemService.create(new CreateInboxItemRequest(
-                normalizedText,
-                null,
-                null,
-                null,
-                InboxItemSource.TELEGRAM,
-                InboxItemPriority.MEDIUM,
-                false,
-                chatId,
-                message.messageId(),
-                Set.of("telegram")
-        ));
+        TelegramIntent intent = commandTelegramIntentDetector.detect(normalizedText);
+        if (intent.isUnknown()) {
+            intent = ruleBasedTelegramIntentDetector.detect(normalizedText);
+        }
+        if (intent.isUnknown()) {
+            intent = aiTelegramIntentDetector.detect(normalizedText);
+        }
+        if (!intent.isUnknown() && handleIntent(chatId, intent)) {
+            return;
+        }
 
-        telegramApiClient.sendMessage(chatId, formatSavedItem(savedItem));
+        try {
+            InboxItemResponse savedItem = inboxItemService.create(new CreateInboxItemRequest(
+                    normalizedText,
+                    null,
+                    null,
+                    null,
+                    InboxItemSource.TELEGRAM,
+                    null,
+                    null,
+                    chatId,
+                    message.messageId(),
+                    Set.of()
+            ));
+
+            telegramApiClient.sendMessage(chatId, formatSavedItem(savedItem));
+        } catch (AiProcessingUnavailableException exception) {
+            telegramApiClient.sendMessage(chatId, "Не сохранил: AI-обработка сейчас недоступна. Попробуй позже.");
+        }
     }
 
     private boolean handleIntent(long chatId, TelegramIntent intent) {
@@ -162,10 +169,17 @@ public class TelegramBotPollingService {
                 yield true;
             }
             case SEARCH -> {
-                telegramApiClient.sendMessage(chatId, formatItems("Результаты поиска", inboxItemSearchService.search(intent.query(), 10)));
+                List<InboxItemResponse> items = inboxItemSearchService.search(
+                        intent.query(),
+                        intent.itemTypes(),
+                        intent.tags(),
+                        intent.period(),
+                        10
+                );
+                telegramApiClient.sendMessage(chatId, searchResponseFormatter.format(intent.query(), items));
                 yield true;
             }
-            case CAPTURE -> false;
+            case UNKNOWN, CAPTURE -> false;
         };
     }
 
@@ -182,16 +196,6 @@ public class TelegramBotPollingService {
 
     private String nullToDash(String value) {
         return StringUtils.hasText(value) ? value : "-";
-    }
-
-    private void handleSearch(long chatId, String command) {
-        String query = command.substring("/search".length()).trim();
-        if (!StringUtils.hasText(query)) {
-            telegramApiClient.sendMessage(chatId, "Напиши запрос после команды: /search кресло");
-            return;
-        }
-
-        telegramApiClient.sendMessage(chatId, formatItems("Результаты поиска", inboxItemSearchService.search(query, 10)));
     }
 
     private void handleType(long chatId, String command) {
@@ -224,6 +228,17 @@ public class TelegramBotPollingService {
 
     private String availableTypes() {
         return String.join(", ", java.util.Arrays.stream(InboxItemType.values()).map(Enum::name).toList());
+    }
+
+    private void handleEmbeddings(long chatId, String command) {
+        String argument = command.substring("/embeddings".length()).trim();
+        if (!argument.isEmpty() && !argument.equals("backfill")) {
+            telegramApiClient.sendMessage(chatId, "Команда: /embeddings backfill");
+            return;
+        }
+
+        int updated = embeddingBackfillService.backfillMissingEmbeddings(25);
+        telegramApiClient.sendMessage(chatId, "Embeddings backfill: обновлено " + updated + " записей.");
     }
 
     private String formatItems(String title, List<InboxItemResponse> items) {

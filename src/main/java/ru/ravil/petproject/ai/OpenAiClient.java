@@ -12,9 +12,11 @@ public class OpenAiClient {
 
     private final RestClient restClient;
     private final String model;
+    private final String embeddingModel;
 
-    public OpenAiClient(String apiKey, String model) {
+    public OpenAiClient(String apiKey, String model, String embeddingModel) {
         this.model = model;
+        this.embeddingModel = embeddingModel;
 
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(10));
@@ -55,5 +57,30 @@ public class OpenAiClient {
         }
 
         return message.content();
+    }
+
+    public List<Double> embed(String input) {
+        OpenAiEmbeddingRequest request = new OpenAiEmbeddingRequest(embeddingModel, input);
+
+        OpenAiEmbeddingResponse response = restClient.post()
+                .uri("/embeddings")
+                .body(request)
+                .retrieve()
+                .body(OpenAiEmbeddingResponse.class);
+
+        if (response == null || response.data() == null || response.data().isEmpty()) {
+            throw new IllegalStateException("OpenAI embedding response has no data");
+        }
+
+        List<Double> embedding = response.data().getFirst().embedding();
+        if (embedding == null || embedding.isEmpty()) {
+            throw new IllegalStateException("OpenAI embedding response has no embedding");
+        }
+
+        return embedding;
+    }
+
+    public String embeddingModel() {
+        return embeddingModel;
     }
 }

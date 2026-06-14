@@ -30,7 +30,12 @@ import ru.ravil.petproject.domain.InboxItemType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
 import ru.ravil.petproject.dto.UpdateInboxItemRequest;
+import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
+import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
+import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
+import ru.ravil.petproject.service.SearchPeriod;
+import ru.ravil.petproject.service.SearchQuery;
 
 @WebMvcTest(InboxItemController.class)
 class InboxItemControllerTest {
@@ -43,6 +48,15 @@ class InboxItemControllerTest {
 
     @MockitoBean
     private InboxItemService inboxItemService;
+
+    @MockitoBean
+    private InboxItemSearchService inboxItemSearchService;
+
+    @MockitoBean
+    private InboxItemEmbeddingBackfillService embeddingBackfillService;
+
+    @MockitoBean
+    private NaturalLanguageSearchQueryParser searchQueryParser;
 
     @Test
     void createReturnsCreatedItem() throws Exception {
@@ -115,6 +129,60 @@ class InboxItemControllerTest {
     void listRejectsInvalidLimit() throws Exception {
         mockMvc.perform(get("/api/inbox-items").param("limit", "0"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void searchUsesRawQueryWhenNaturalLanguageParserDoesNotRecognizeIntent() throws Exception {
+        when(searchQueryParser.parse("kafka")).thenReturn(SearchQuery.unknown());
+        when(inboxItemSearchService.search("kafka", 10)).thenReturn(List.of(response("Посмотреть доклад про Kafka")));
+
+        mockMvc.perform(get("/api/inbox-items/search").param("q", "kafka"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].rawText").value("Посмотреть доклад про Kafka"));
+
+        verify(inboxItemSearchService).search("kafka", 10);
+    }
+
+    @Test
+    void searchUsesParsedNaturalLanguageQuery() throws Exception {
+        when(searchQueryParser.parse("какие фильмы я сохранил сегодня"))
+                .thenReturn(SearchQuery.search("фильмы", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.TODAY));
+        when(inboxItemSearchService.search("фильмы", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.TODAY, 10))
+                .thenReturn(List.of(response("Хочу посмотреть фильм Мгла")));
+
+        mockMvc.perform(get("/api/inbox-items/search").param("q", "какие фильмы я сохранил сегодня"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].rawText").value("Хочу посмотреть фильм Мгла"));
+
+        verify(inboxItemSearchService).search("фильмы", Set.of(InboxItemType.MOVIE), Set.of(), SearchPeriod.TODAY, 10);
+    }
+
+    @Test
+    void searchCanRouteRecentRequests() throws Exception {
+        when(searchQueryParser.parse("покажи последние")).thenReturn(SearchQuery.recent());
+        when(inboxItemService.listRecent(5)).thenReturn(List.of(response("first")));
+
+        mockMvc.perform(get("/api/inbox-items/search")
+                        .param("q", "покажи последние")
+                        .param("limit", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].rawText").value("first"));
+
+        verify(inboxItemService).listRecent(5);
+    }
+
+    @Test
+    void backfillEmbeddingsReturnsUpdatedCount() throws Exception {
+        when(embeddingBackfillService.backfillMissingEmbeddings(25)).thenReturn(3);
+
+        mockMvc.perform(post("/api/inbox-items/embeddings/backfill"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updated").value(3));
+
+        verify(embeddingBackfillService).backfillMissingEmbeddings(25);
     }
 
     @Test

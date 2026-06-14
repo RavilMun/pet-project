@@ -8,12 +8,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import ru.ravil.petproject.ai.AiClassificationResult;
 import ru.ravil.petproject.ai.AiClassificationService;
+import ru.ravil.petproject.ai.AiEmbeddingService;
+import ru.ravil.petproject.ai.EmbeddingResult;
 import ru.ravil.petproject.domain.InboxItem;
 import ru.ravil.petproject.domain.InboxItemPriority;
 import ru.ravil.petproject.domain.InboxItemSource;
@@ -31,23 +34,27 @@ public class InboxItemService {
     private final InboxItemMapper inboxItemMapper;
     private final LinkExtractor linkExtractor;
     private final AiClassificationService aiClassificationService;
+    private final ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
 
     public InboxItemService(
             InboxItemRepository inboxItemRepository,
             InboxItemMapper inboxItemMapper,
             LinkExtractor linkExtractor,
-            AiClassificationService aiClassificationService
+            AiClassificationService aiClassificationService,
+            ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider
     ) {
         this.inboxItemRepository = inboxItemRepository;
         this.inboxItemMapper = inboxItemMapper;
         this.linkExtractor = linkExtractor;
         this.aiClassificationService = aiClassificationService;
+        this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
     }
 
     @Transactional
     public InboxItemResponse create(CreateInboxItemRequest request) {
         List<ExtractedLink> links = linkExtractor.extract(request.rawText());
-        Optional<AiClassificationResult> classification = aiClassificationService.classify(request.rawText());
+        AiClassificationResult classification = aiClassificationService.classify(request.rawText())
+                .orElseThrow(AiProcessingUnavailableException::new);
         InboxItem item = new InboxItem(request.rawText(), valueOrDefault(request.source(), InboxItemSource.MANUAL));
         item.setTitle(request.title());
         item.setSummary(request.summary());
@@ -58,9 +65,11 @@ public class InboxItemService {
         item.setTelegramMessageId(request.telegramMessageId());
         item.setTags(resolveTags(request.tags(), links));
         links.forEach(link -> item.addLink(link.url(), link.domain()));
-        classification.ifPresent(result -> applyClassification(item, request, result, links));
+        applyClassification(item, request, classification, links);
 
-        return inboxItemMapper.toResponse(inboxItemRepository.save(item));
+        InboxItem savedItem = inboxItemRepository.save(item);
+        updateEmbeddingIfAvailable(savedItem);
+        return inboxItemMapper.toResponse(savedItem);
     }
 
     @Transactional(readOnly = true)
@@ -122,7 +131,9 @@ public class InboxItemService {
             item.setProcessedAt(OffsetDateTime.now());
         }
 
-        return inboxItemMapper.toResponse(inboxItemRepository.save(item));
+        InboxItem savedItem = inboxItemRepository.save(item);
+        updateEmbeddingIfAvailable(savedItem);
+        return inboxItemMapper.toResponse(savedItem);
     }
 
     @Transactional
@@ -203,5 +214,24 @@ public class InboxItemService {
 
     private static <T> T valueOrDefault(T value, T defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    private void updateEmbeddingIfAvailable(InboxItem item) {
+        AiEmbeddingService aiEmbeddingService = aiEmbeddingServiceProvider.getIfAvailable();
+        if (aiEmbeddingService == null || !StringUtils.hasText(item.getSearchText())) {
+            return;
+        }
+
+        aiEmbeddingService.embed(item.getSearchText())
+                .ifPresent(result -> updateEmbedding(item.getId(), result));
+    }
+
+    private void updateEmbedding(UUID itemId, EmbeddingResult result) {
+        inboxItemRepository.updateEmbedding(
+                itemId,
+                result.pgVector(),
+                result.model(),
+                OffsetDateTime.now()
+        );
     }
 }

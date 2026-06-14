@@ -15,10 +15,12 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.CascadeType;
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -44,6 +46,9 @@ public class InboxItem {
 
     @Column(name = "summary", columnDefinition = "text")
     private String summary;
+
+    @Column(name = "search_text", columnDefinition = "text")
+    private String searchText;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false)
@@ -108,11 +113,13 @@ public class InboxItem {
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;
+        refreshSearchText();
     }
 
     @PreUpdate
     void preUpdate() {
         updatedAt = OffsetDateTime.now();
+        refreshSearchText();
     }
 
     public void setTags(Set<String> tags) {
@@ -121,5 +128,23 @@ public class InboxItem {
 
     public void addLink(String url, String domain) {
         this.links.add(new InboxItemLink(this, url, domain));
+    }
+
+    private void refreshSearchText() {
+        searchText = joinSearchParts(
+                rawText,
+                title,
+                summary,
+                type == null ? null : type.name(),
+                tags.stream()
+                        .sorted(Comparator.naturalOrder())
+                        .collect(Collectors.joining(" "))
+        );
+    }
+
+    private String joinSearchParts(String... parts) {
+        return java.util.Arrays.stream(parts)
+                .filter(part -> part != null && !part.isBlank())
+                .collect(Collectors.joining(" "));
     }
 }

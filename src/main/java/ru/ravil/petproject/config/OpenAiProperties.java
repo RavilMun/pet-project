@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record OpenAiProperties(
         boolean enabled,
         String apiKey,
-        String model
+        String model,
+        String embeddingModel
 ) {
 }

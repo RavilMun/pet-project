@@ -192,3 +192,68 @@ databaseChangeLog:
                   name: telegram_chat_id
               - column:
                   name: created_at
+
+  - changeSet:
+      id: 005-add-inbox-item-search-text
+      author: codex
+      changes:
+        - addColumn:
+            tableName: inbox_items
+            columns:
+              - column:
+                  name: search_text
+                  type: text
+        - sql:
+            sql: |
+              update inbox_items item
+              set search_text = concat_ws(
+                  ' ',
+                  item.raw_text,
+                  item.title,
+                  item.summary,
+                  item.type,
+                  (
+                      select string_agg(tag.tag, ' ' order by tag.tag)
+                      from inbox_item_tags tag
+                      where tag.item_id = item.id
+                  )
+              )
+        - sql:
+            sql: |
+              create index idx_inbox_items_search_text_fts
+              on inbox_items
+              using gin (to_tsvector('russian', coalesce(search_text, '')))
+
+  - changeSet:
+      id: 006-add-inbox-item-simple-search-index
+      author: codex
+      changes:
+        - sql:
+            sql: |
+              create index idx_inbox_items_search_text_simple_fts
+              on inbox_items
+              using gin (to_tsvector('simple', coalesce(search_text, '')))
+
+  - changeSet:
+      id: 007-add-inbox-item-embeddings
+      author: codex
+      changes:
+        - sql:
+            sql: create extension if not exists vector
+        - addColumn:
+            tableName: inbox_items
+            columns:
+              - column:
+                  name: embedding
+                  type: vector(1536)
+              - column:
+                  name: embedding_model
+                  type: varchar(128)
+              - column:
+                  name: embedded_at
+                  type: timestamp with time zone
+        - sql:
+            sql: |
+              create index idx_inbox_items_embedding_hnsw
+              on inbox_items
+              using hnsw (embedding vector_cosine_ops)

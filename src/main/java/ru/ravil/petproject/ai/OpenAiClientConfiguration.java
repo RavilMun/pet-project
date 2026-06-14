@@ -18,6 +18,9 @@ public class OpenAiClientConfiguration {
         if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException("openai.model must be configured when OpenAI integration is enabled");
         }
-        return new OpenAiClient(properties.apiKey(), properties.model());
+        if (!StringUtils.hasText(properties.embeddingModel())) {
+            throw new IllegalStateException("openai.embedding-model must be configured when OpenAI integration is enabled");
+        }
+        return new OpenAiClient(properties.apiKey(), properties.model(), properties.embeddingModel());
     }
 }

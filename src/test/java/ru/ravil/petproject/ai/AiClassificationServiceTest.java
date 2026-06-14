@@ -52,6 +52,71 @@ class AiClassificationServiceTest {
     }
 
     @Test
+    void classifyParsesRussianMovieWishAsNonActionableMovie() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "title": "Посмотреть фильм Мгла",
+                  "summary": "Пользователь хочет посмотреть фильм «Мгла».",
+                  "type": "MOVIE",
+                  "tags": ["фильм", "мгла", "просмотр"],
+                  "priority": "LOW",
+                  "actionable": false
+                }
+                """);
+
+        Optional<AiClassificationResult> result = service.classify("хочу посмотреть фильм Мгла");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().type()).isEqualTo(InboxItemType.MOVIE);
+        assertThat(result.get().priority()).isEqualTo(InboxItemPriority.LOW);
+        assertThat(result.get().actionable()).isFalse();
+        assertThat(result.get().tags()).containsExactly("фильм", "мгла", "просмотр");
+    }
+
+    @Test
+    void classifyParsesReminderAsActionable() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "title": "Оплатить интернет завтра",
+                  "summary": "Нужно оплатить домашний интернет завтра.",
+                  "type": "REMINDER",
+                  "tags": ["напоминание", "интернет", "оплата"],
+                  "priority": "MEDIUM",
+                  "actionable": true
+                }
+                """);
+
+        Optional<AiClassificationResult> result = service.classify("напомни оплатить интернет завтра");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().type()).isEqualTo(InboxItemType.REMINDER);
+        assertThat(result.get().actionable()).isTrue();
+    }
+
+    @Test
+    void classifyUsesDefaultsForUnknownEnumValues() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "title": "Unknown",
+                  "summary": "Unknown",
+                  "type": "UNKNOWN_TYPE",
+                  "tags": ["misc"],
+                  "priority": "URGENT",
+                  "actionable": false
+                }
+                """);
+
+        Optional<AiClassificationResult> result = service.classify("unknown");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().type()).isEqualTo(InboxItemType.OTHER);
+        assertThat(result.get().priority()).isEqualTo(InboxItemPriority.MEDIUM);
+    }
+
+    @Test
     void classifyReturnsEmptyWhenJsonIsInvalid() {
         when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
         when(openAiClient.classify(anyString(), anyString())).thenReturn("not json");
