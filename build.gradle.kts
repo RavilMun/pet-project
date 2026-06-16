@@ -28,6 +28,7 @@ dependencies {
     annotationProcessor("org.projectlombok:lombok")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testCompileOnly("org.projectlombok:lombok")
@@ -38,6 +39,7 @@ dependencies {
 tasks.test {
     useJUnitPlatform {
         excludeTags("live-openai")
+        excludeTags("memory-eval")
     }
 }
 
@@ -53,5 +55,28 @@ val liveTest by tasks.registering(Test::class) {
         propertyEnabled || envEnabled
     }
     systemProperty("run.live.gpt.tests", "true")
+    shouldRunAfter(tasks.test)
+}
+
+val memoryEval by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs AI Memory semantic evaluation scenarios and writes build/reports/memory-eval."
+    outputs.upToDateWhen { false }
+    useJUnitPlatform {
+        includeTags("memory-eval")
+    }
+    systemProperty("spring.profiles.active", "eval")
+    systemProperty("memory.eval.judge.enabled", providers.gradleProperty("memoryEvalJudgeEnabled").orNull
+        ?: System.getenv("MEMORY_EVAL_JUDGE_ENABLED")
+        ?: "false")
+    systemProperty("memory.eval.judge.model", providers.gradleProperty("memoryEvalJudgeModel").orNull
+        ?: System.getenv("MEMORY_EVAL_JUDGE_MODEL")
+        ?: "gpt-4.1-mini")
+    systemProperty("memory.eval.limit", providers.gradleProperty("memoryEvalLimit").orNull
+        ?: System.getenv("MEMORY_EVAL_LIMIT")
+        ?: "0")
+    systemProperty("memory.eval.database.mode", providers.gradleProperty("memoryEvalDatabaseMode").orNull
+        ?: System.getenv("MEMORY_EVAL_DATABASE_MODE")
+        ?: "isolated")
     shouldRunAfter(tasks.test)
 }

@@ -1,0 +1,493 @@
+- id: "noisy_purchase_001"
+  category: "NOISY_PURCHASE"
+  save:
+    - "Купил кабель Anker в DNS."
+    - "Заказал кабель Baseus на Ozon."
+    - "Смотрел зарядку Baseus, но не купил."
+  questions:
+    - text: "Где купил кабель Baseus?"
+      expectedFacts:
+        - "кабель Baseus заказан на Ozon"
+      forbiddenFacts:
+        - "кабель Baseus куплен в DNS"
+        - "зарядка Baseus куплена"
+      mustNotSayUnknown: true
+
+- id: "noisy_purchase_002"
+  category: "NOISY_PURCHASE"
+  save:
+    - "Купил кабель Anker в DNS."
+    - "Заказал кабель Baseus на Ozon."
+    - "Смотрел зарядку Baseus, но не купил."
+  questions:
+    - text: "Что реально купил Baseus?"
+      expectedFacts:
+        - "реально куплен или заказан кабель Baseus"
+      forbiddenFacts:
+        - "зарядка Baseus куплена"
+      mustNotSayUnknown: true
+
+- id: "noisy_purchase_003"
+  category: "NOISY_PURCHASE"
+  save:
+    - "Купил кабель Anker в DNS."
+    - "Заказал кабель Baseus на Ozon."
+    - "Смотрел зарядку Baseus, но не купил."
+  questions:
+    - text: "Что только смотрел, но не купил?"
+      expectedFacts:
+        - "пользователь только смотрел зарядку Baseus"
+        - "зарядку Baseus не купил"
+      forbiddenFacts:
+        - "кабель Baseus только смотрел"
+      mustNotSayUnknown: true
+
+- id: "noisy_person_001"
+  category: "NOISY_PERSON"
+  save:
+    - "Андрей дизайнер."
+    - "Алексей backend-разработчик."
+    - "Антон тестировщик."
+  questions:
+    - text: "Кто backend-разработчик?"
+      expectedFacts:
+        - "Алексей backend-разработчик"
+      forbiddenFacts:
+        - "Андрей backend-разработчик"
+        - "Антон backend-разработчик"
+      mustNotSayUnknown: true
+
+- id: "noisy_person_002"
+  category: "NOISY_PERSON"
+  save:
+    - "Андрей дизайнер."
+    - "Алексей backend-разработчик."
+    - "Антон тестировщик."
+  questions:
+    - text: "Кто дизайнер?"
+      expectedFacts:
+        - "Андрей дизайнер"
+      forbiddenFacts:
+        - "Алексей дизайнер"
+        - "Антон дизайнер"
+      mustNotSayUnknown: true
+
+- id: "noisy_person_003"
+  category: "NOISY_PERSON"
+  save:
+    - "Андрей дизайнер."
+    - "Алексей backend-разработчик."
+    - "Антон тестировщик."
+  questions:
+    - text: "Кто тестировщик?"
+      expectedFacts:
+        - "Антон тестировщик"
+      forbiddenFacts:
+        - "Андрей тестировщик"
+        - "Алексей тестировщик"
+      mustNotSayUnknown: true
+
+- id: "temporal_conflict_001"
+  category: "TEMPORAL_CONFLICT"
+  save:
+    - "Раньше мой семейный врач был Петров."
+    - "Теперь мой семейный врач Соколова."
+    - "Дубовская это ортодонт."
+  questions:
+    - text: "Кто сейчас семейный врач?"
+      expectedFacts:
+        - "сейчас семейный врач пользователя Соколова"
+      forbiddenFacts:
+        - "сейчас семейный врач Петров"
+        - "сейчас семейный врач Дубовская"
+      mustNotSayUnknown: true
+
+- id: "temporal_conflict_002"
+  category: "TEMPORAL_CONFLICT"
+  save:
+    - "Раньше хотел купить iPad mini."
+    - "Потом решил брать Samsung Tab S9."
+    - "Еще смотрел чехол для iPad, но не покупал."
+  questions:
+    - text: "Какой планшет решил брать?"
+      expectedFacts:
+        - "пользователь решил брать Samsung Tab S9"
+      forbiddenFacts:
+        - "пользователь решил брать iPad mini"
+      mustNotSayUnknown: true
+
+- id: "temporal_conflict_003"
+  category: "TEMPORAL_CONFLICT"
+  save:
+    - "Раньше хотел купить iPad mini."
+    - "Потом решил брать Samsung Tab S9."
+    - "Еще смотрел чехол для iPad, но не покупал."
+  questions:
+    - text: "Что хотел раньше?"
+      expectedFacts:
+        - "раньше пользователь хотел купить iPad mini"
+      forbiddenFacts:
+        - "раньше пользователь хотел купить Samsung Tab S9"
+      mustNotSayUnknown: true
+
+- id: "negation_conflict_001"
+  category: "NEGATION_CONFLICT"
+  save:
+    - "Tokyo City не понравился: шумно и долго несли заказ."
+    - "Harvest понравился: тихо, вкусно и хороший сервис."
+    - "Duo Asia нормальный, но без восторга."
+  questions:
+    - text: "Какой ресторан мне не понравился?"
+      expectedFacts:
+        - "пользователю не понравился Tokyo City"
+      forbiddenFacts:
+        - "пользователю не понравился Harvest"
+      mustNotSayUnknown: true
+
+- id: "negation_conflict_002"
+  category: "NEGATION_CONFLICT"
+  save:
+    - "Tokyo City не понравился: шумно и долго несли заказ."
+    - "Harvest понравился: тихо, вкусно и хороший сервис."
+    - "Duo Asia нормальный, но без восторга."
+  questions:
+    - text: "Какой ресторан понравился?"
+      expectedFacts:
+        - "пользователю понравился Harvest"
+      forbiddenFacts:
+        - "пользователю понравился Tokyo City"
+      mustNotSayUnknown: true
+
+- id: "negation_conflict_003"
+  category: "NEGATION_CONFLICT"
+  save:
+    - "Кофе с сильной кислинкой мне не нравится."
+    - "Кофе из Эфиопии с ягодными нотами понравился."
+    - "Бразильский кофе показался слишком плотным."
+  questions:
+    - text: "Какой кофе мне не нравится?"
+      expectedFacts:
+        - "пользователю не нравится кофе с сильной кислинкой"
+      forbiddenFacts:
+        - "пользователю не нравится кофе из Эфиопии"
+      mustNotSayUnknown: true
+
+- id: "negation_conflict_004"
+  category: "NEGATION_CONFLICT"
+  save:
+    - "Кофе с сильной кислинкой мне не нравится."
+    - "Кофе из Эфиопии с ягодными нотами понравился."
+    - "Бразильский кофе показался слишком плотным."
+  questions:
+    - text: "Какой кофе понравился?"
+      expectedFacts:
+        - "пользователю понравился кофе из Эфиопии с ягодными нотами"
+      forbiddenFacts:
+        - "пользователю понравился кофе с сильной кислинкой"
+      mustNotSayUnknown: true
+
+- id: "no_answer_noisy_001"
+  category: "NO_ANSWER"
+  save:
+    - "Дубовская ортодонт."
+    - "Иванова терапевт."
+    - "Петров семейный врач."
+  questions:
+    - text: "Где работает Дубовская?"
+      expectedFacts: []
+      forbiddenFacts:
+        - "Дубовская работает в конкретном месте"
+      mustSayUnknown: true
+
+- id: "no_answer_noisy_002"
+  category: "NO_ANSWER"
+  save:
+    - "Купил монитор Dell."
+    - "Купил мышку Logitech за 6490 рублей."
+    - "Заказал клавиатуру Keychron."
+  questions:
+    - text: "Сколько стоил монитор Dell?"
+      expectedFacts: []
+      forbiddenFacts:
+        - "монитор Dell стоил 6490 рублей"
+      mustSayUnknown: true
+
+- id: "no_answer_noisy_003"
+  category: "NO_ANSWER"
+  save:
+    - "Встречался с Романом в понедельник."
+    - "Алиса рассказывала про переезд."
+    - "Никита советовал кофейню на углу."
+  questions:
+    - text: "Где работает Роман?"
+      expectedFacts: []
+      forbiddenFacts:
+        - "Роман работает в конкретной компании"
+      mustSayUnknown: true
+
+- id: "typo_001"
+  category: "TYPO"
+  save:
+    - "Вчера купил монитор Dell в DNS за 27990 рублей."
+    - "Позавчера заказал кабель Baseus на Ozon."
+    - "Сегодня смотрел зарядку Anker, но не купил."
+  questions:
+    - text: "че я покупал вчера"
+      expectedFacts:
+        - "вчера пользователь купил монитор Dell"
+      forbiddenFacts:
+        - "вчера пользователь купил кабель Baseus"
+      mustNotSayUnknown: true
+
+- id: "typo_002"
+  category: "TYPO"
+  save:
+    - "Купил беспроводную мышку Logitech MX Anywhere 3 за 6490 рублей."
+    - "Клавиатуру Keychron только смотрел, пока не покупал."
+    - "Монитор Dell купил за 27990 рублей."
+  questions:
+    - text: "скок стоила мышка"
+      expectedFacts:
+        - "мышка Logitech стоила 6490 рублей"
+      forbiddenFacts:
+        - "мышка стоила 27990 рублей"
+      mustNotSayUnknown: true
+
+- id: "typo_003"
+  category: "TYPO"
+  save:
+    - "Мой ортодонт Дубовская."
+    - "Мой терапевт Иванова."
+    - "Семейный врач Соколова."
+  questions:
+    - text: "кто такая дубовска"
+      expectedFacts:
+        - "Дубовская ортодонт пользователя"
+      forbiddenFacts:
+        - "Дубовская терапевт"
+      mustNotSayUnknown: true
+
+- id: "typo_004"
+  category: "TYPO"
+  save:
+    - "Купил кабель Anker в DNS."
+    - "Заказал кабель Baseus на Ozon."
+    - "Кабель Ugreen смотрел в МВидео."
+  questions:
+    - text: "где брал кабель"
+      expectedFacts:
+        - "пользователь брал кабель Anker в DNS"
+        - "пользователь заказал кабель Baseus на Ozon"
+      forbiddenFacts:
+        - "пользователь купил кабель Ugreen в МВидео"
+      mustNotSayUnknown: true
+
+- id: "typo_005"
+  category: "TYPO"
+  save:
+    - "Игорь посоветовал книгу Проект Аве Мария."
+    - "Саша советовал сериал Медленные лошади."
+    - "Антон рассказывал про подкаст о продуктивности."
+  questions:
+    - text: "кто мне советовал книжку"
+      expectedFacts:
+        - "Игорь советовал книгу Проект Аве Мария"
+      forbiddenFacts:
+        - "Саша советовал книгу"
+      mustNotSayUnknown: true
+
+- id: "mixed_language_001"
+  category: "MIXED_LANGUAGE"
+  save:
+    - "Bought Anker cable in DNS."
+    - "Ordered Baseus charger on Ozon."
+    - "Saved article about PostgreSQL indexes."
+  questions:
+    - text: "где купил Anker cable?"
+      expectedFacts:
+        - "Anker cable bought in DNS"
+      forbiddenFacts:
+        - "Anker cable bought on Ozon"
+      mustNotSayUnknown: true
+
+- id: "mixed_language_002"
+  category: "MIXED_LANGUAGE"
+  save:
+    - "Bought Anker cable in DNS."
+    - "Ordered Baseus charger on Ozon."
+    - "Saved article about PostgreSQL indexes."
+  questions:
+    - text: "что сохранял про PostgreSQL indexes?"
+      expectedFacts:
+        - "saved article about PostgreSQL indexes"
+      forbiddenFacts:
+        - "saved article about Kafka indexes"
+      mustNotSayUnknown: true
+
+- id: "long_diary_001"
+  category: "LONG_DIARY"
+  save:
+    - "Сегодня утром встретился с Катей и Олегом в офисе на Невском. Катя рассказывала про запуск рекламной кампании, Олег показывал макеты лендинга. На обед ходили в Birch, где я заказал пасту и чай. Вечером заехал в DNS и купил мышку Logitech за 6490 рублей. Тренировку отменил, потому что заболело колено. Дома записал идею для пет-проекта про недельные отчеты."
+    - "Вчера созванивался с Романом про Kafka, но покупок не было."
+  questions:
+    - text: "Кто был на встрече сегодня утром?"
+      expectedFacts:
+        - "на встрече были Катя и Олег"
+      forbiddenFacts:
+        - "на встрече был Роман"
+      mustNotSayUnknown: true
+
+- id: "long_diary_002"
+  category: "LONG_DIARY"
+  save:
+    - "Сегодня утром встретился с Катей и Олегом в офисе на Невском. Катя рассказывала про запуск рекламной кампании, Олег показывал макеты лендинга. На обед ходили в Birch, где я заказал пасту и чай. Вечером заехал в DNS и купил мышку Logitech за 6490 рублей. Тренировку отменил, потому что заболело колено. Дома записал идею для пет-проекта про недельные отчеты."
+    - "Вчера обедал в Tokyo City и покупал кабель Anker."
+  questions:
+    - text: "Где я сегодня обедал?"
+      expectedFacts:
+        - "сегодня пользователь обедал в Birch"
+      forbiddenFacts:
+        - "сегодня пользователь обедал в Tokyo City"
+      mustNotSayUnknown: true
+
+- id: "long_diary_003"
+  category: "LONG_DIARY"
+  save:
+    - "Сегодня утром встретился с Катей и Олегом в офисе на Невском. Катя рассказывала про запуск рекламной кампании, Олег показывал макеты лендинга. На обед ходили в Birch, где я заказал пасту и чай. Вечером заехал в DNS и купил мышку Logitech за 6490 рублей. Тренировку отменил, потому что заболело колено. Дома записал идею для пет-проекта про недельные отчеты."
+    - "На прошлой неделе покупал клавиатуру Keychron на Ozon."
+  questions:
+    - text: "Что купил вечером?"
+      expectedFacts:
+        - "вечером пользователь купил мышку Logitech"
+      forbiddenFacts:
+        - "вечером пользователь купил клавиатуру Keychron"
+      mustNotSayUnknown: true
+
+- id: "long_diary_004"
+  category: "LONG_DIARY"
+  save:
+    - "Сегодня утром встретился с Катей и Олегом в офисе на Невском. Катя рассказывала про запуск рекламной кампании, Олег показывал макеты лендинга. На обед ходили в Birch, где я заказал пасту и чай. Вечером заехал в DNS и купил мышку Logitech за 6490 рублей. Тренировку отменил, потому что заболело колено. Дома записал идею для пет-проекта про недельные отчеты."
+    - "Вчера тренировку отменил из-за дождя."
+  questions:
+    - text: "Почему отменил тренировку сегодня?"
+      expectedFacts:
+        - "сегодня тренировку отменил потому что заболело колено"
+      forbiddenFacts:
+        - "сегодня тренировку отменил из-за дождя"
+      mustNotSayUnknown: true
+
+- id: "similar_events_001"
+  category: "SIMILAR_EVENTS"
+  save:
+    - "Игорь посоветовал книгу Проект Аве Мария."
+    - "Игорь переехал в Казань."
+    - "Игорь работает в Ozon."
+    - "Илья советовал фильм Дюна 2."
+  questions:
+    - text: "Что посоветовал Игорь?"
+      expectedFacts:
+        - "Игорь посоветовал книгу Проект Аве Мария"
+      forbiddenFacts:
+        - "Игорь посоветовал фильм Дюна 2"
+      mustNotSayUnknown: true
+
+- id: "similar_events_002"
+  category: "SIMILAR_EVENTS"
+  save:
+    - "Игорь посоветовал книгу Проект Аве Мария."
+    - "Игорь переехал в Казань."
+    - "Игорь работает в Ozon."
+    - "Илья работает в Яндексе."
+  questions:
+    - text: "Куда переехал Игорь?"
+      expectedFacts:
+        - "Игорь переехал в Казань"
+      forbiddenFacts:
+        - "Игорь переехал в Москву"
+      mustNotSayUnknown: true
+
+- id: "similar_events_003"
+  category: "SIMILAR_EVENTS"
+  save:
+    - "Игорь посоветовал книгу Проект Аве Мария."
+    - "Игорь переехал в Казань."
+    - "Игорь работает в Ozon."
+    - "Илья работает в Яндексе."
+  questions:
+    - text: "Где работает Игорь?"
+      expectedFacts:
+        - "Игорь работает в Ozon"
+      forbiddenFacts:
+        - "Игорь работает в Яндексе"
+      mustNotSayUnknown: true
+
+- id: "organization_object_001"
+  category: "ORGANIZATION_OBJECT"
+  save:
+    - "Купил мышку Logitech в DNS."
+    - "Купил клавиатуру Keychron на Ozon."
+    - "Вернул наушники Sony в МВидео."
+  questions:
+    - text: "Что покупал в DNS?"
+      expectedFacts:
+        - "в DNS пользователь купил мышку Logitech"
+      forbiddenFacts:
+        - "в DNS пользователь купил клавиатуру Keychron"
+      mustNotSayUnknown: true
+
+- id: "organization_object_002"
+  category: "ORGANIZATION_OBJECT"
+  save:
+    - "Купил мышку Logitech в DNS."
+    - "Купил клавиатуру Keychron на Ozon."
+    - "Вернул наушники Sony в МВидео."
+  questions:
+    - text: "Что купил на Ozon?"
+      expectedFacts:
+        - "на Ozon пользователь купил клавиатуру Keychron"
+      forbiddenFacts:
+        - "на Ozon пользователь купил мышку Logitech"
+      mustNotSayUnknown: true
+
+- id: "organization_object_003"
+  category: "ORGANIZATION_OBJECT"
+  save:
+    - "Купил мышку Logitech в DNS."
+    - "Купил клавиатуру Keychron на Ozon."
+    - "Вернул наушники Sony в МВидео."
+  questions:
+    - text: "Что вернул в МВидео?"
+      expectedFacts:
+        - "в МВидео пользователь вернул наушники Sony"
+      forbiddenFacts:
+        - "в МВидео пользователь вернул клавиатуру Keychron"
+      mustNotSayUnknown: true
+
+- id: "noisy_cross_case_001"
+  category: "NOISY_PURCHASE"
+  save:
+    - "В DNS купил только мышку Logitech."
+    - "В DNS смотрел монитор LG, но покупать не стал."
+    - "На Ozon заказал монитор Dell."
+  questions:
+    - text: "Что я купил в DNS?"
+      expectedFacts:
+        - "в DNS пользователь купил только мышку Logitech"
+      forbiddenFacts:
+        - "в DNS пользователь купил монитор LG"
+        - "в DNS пользователь купил монитор Dell"
+      mustNotSayUnknown: true
+
+- id: "noisy_cross_case_002"
+  category: "NOISY_PURCHASE"
+  save:
+    - "В DNS купил только мышку Logitech."
+    - "В DNS смотрел монитор LG, но покупать не стал."
+    - "На Ozon заказал монитор Dell."
+  questions:
+    - text: "Что смотрел в DNS, но не купил?"
+      expectedFacts:
+        - "в DNS пользователь смотрел монитор LG, но не купил"
+      forbiddenFacts:
+        - "пользователь не купил мышку Logitech"
+      mustNotSayUnknown: true

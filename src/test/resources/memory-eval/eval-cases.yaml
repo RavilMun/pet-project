@@ -1,0 +1,602 @@
+- id: "person_doctor_identity_001"
+  category: "PERSON"
+  save:
+    - "Мой ортодонт Дубовская."
+  questions:
+    - text: "Кто такая Дубовская?"
+      expectedFacts:
+        - "Дубовская ортодонт пользователя"
+      forbiddenFacts:
+        - "Дубовская терапевт"
+      mustNotSayUnknown: true
+
+- id: "person_doctor_identity_002"
+  category: "PERSON"
+  save:
+    - "Мой терапевт Иванова."
+  questions:
+    - text: "Кто мой терапевт?"
+      expectedFacts:
+        - "терапевт пользователя Иванова"
+      forbiddenFacts:
+        - "Иванова ортодонт"
+      mustNotSayUnknown: true
+
+- id: "preference_tool_001"
+  category: "PREFERENCE"
+  save:
+    - "Моя любимая IDE IntelliJ IDEA."
+  questions:
+    - text: "Какая у меня любимая IDE?"
+      expectedFacts:
+        - "любимая IDE пользователя IntelliJ IDEA"
+      forbiddenFacts:
+        - "любимая IDE пользователя VS Code"
+      mustNotSayUnknown: true
+
+- id: "purchase_monitor_001"
+  category: "PURCHASE"
+  save:
+    - "Вчера купил монитор Dell в DNS за 27990 рублей."
+  questions:
+    - text: "Что я вчера купил в DNS?"
+      expectedFacts:
+        - "пользователь купил монитор Dell в DNS"
+      forbiddenFacts:
+        - "пользователь купил мышку"
+      mustNotSayUnknown: true
+
+- id: "purchase_price_001"
+  category: "PURCHASE"
+  save:
+    - "Купил беспроводную мышку Logitech MX Anywhere 3 за 6490 рублей."
+  questions:
+    - text: "Сколько стоила мышка Logitech?"
+      expectedFacts:
+        - "мышка Logitech стоила 6490 рублей"
+      forbiddenFacts:
+        - "мышка стоила 27990 рублей"
+      mustNotSayUnknown: true
+
+- id: "gift_graduation_001"
+  category: "GIFT"
+  save:
+    - "Папа подарил мне кожаный ремень на выпускной."
+  questions:
+    - text: "Что папа подарил мне на выпускной?"
+      expectedFacts:
+        - "папа подарил пользователю кожаный ремень"
+      forbiddenFacts:
+        - "папа подарил часы"
+      mustNotSayUnknown: true
+
+- id: "gift_lost_001"
+  category: "GIFT"
+  save:
+    - "Мама подарила мне на двадцатилетие часы Casio. Через два года я их потерял во время поездки в Москву."
+  questions:
+    - text: "Что я потерял в Москве?"
+      expectedFacts:
+        - "пользователь потерял часы Casio в Москве"
+      forbiddenFacts:
+        - "пользователь потерял ремень"
+      mustNotSayUnknown: true
+
+- id: "relationship_multiple_people_001"
+  category: "RELATIONSHIP"
+  save:
+    - "В воскресенье встречался с Романом и Алисой. Роман рассказал про новую работу, а Алиса про переезд."
+  questions:
+    - text: "Кто рассказывал про переезд?"
+      expectedFacts:
+        - "Алиса рассказывала про переезд"
+      forbiddenFacts:
+        - "Роман рассказывал про переезд"
+      mustNotSayUnknown: true
+
+- id: "relationship_multiple_people_002"
+  category: "RELATIONSHIP"
+  save:
+    - "В воскресенье встречался с Романом и Алисой. Роман рассказал про новую работу, а Алиса про переезд."
+  questions:
+    - text: "О чем рассказывал Роман?"
+      expectedFacts:
+        - "Роман рассказывал про новую работу"
+      forbiddenFacts:
+        - "Роман рассказывал про переезд"
+      mustNotSayUnknown: true
+
+- id: "negation_restaurant_001"
+  category: "NEGATION"
+  save:
+    - "Не понравился ресторан Северяне: было шумно и дорого."
+  questions:
+    - text: "Почему мне не понравились Северяне?"
+      expectedFacts:
+        - "в ресторане Северяне было шумно и дорого"
+      forbiddenFacts:
+        - "Северяне понравились пользователю"
+      mustNotSayUnknown: true
+
+- id: "learning_sleep_001"
+  category: "LEARNING"
+  save:
+    - "Для хорошего сна помогает не пить кофе вечером."
+  questions:
+    - text: "Что помогает для хорошего сна?"
+      expectedFacts:
+        - "для хорошего сна помогает не пить кофе вечером"
+      forbiddenFacts:
+        - "для хорошего сна помогает пить кофе вечером"
+      mustNotSayUnknown: true
+
+- id: "question_saved_001"
+  category: "QUESTION"
+  save:
+    - "Сохранить вопрос: почему PostgreSQL медленно работает на больших таблицах?"
+  questions:
+    - text: "Какой вопрос про PostgreSQL я сохранял?"
+      expectedFacts:
+        - "пользователь сохранял вопрос почему PostgreSQL медленно работает на больших таблицах"
+      forbiddenFacts:
+        - "пользователь знает ответ почему PostgreSQL медленно работает"
+      mustNotSayUnknown: true
+
+- id: "reminder_booking_001"
+  category: "REMINDER"
+  save:
+    - "Сегодня забронировал столик в Harvest на пятницу в 19:00."
+  questions:
+    - text: "Где у меня бронь на пятницу?"
+      expectedFacts:
+        - "бронь на пятницу в Harvest"
+      forbiddenFacts:
+        - "бронь в Tokyo City"
+      mustNotSayUnknown: true
+
+- id: "event_lunch_001"
+  category: "EVENT"
+  save:
+    - "На обед ходил в Tokyo City, заказал том ям и зеленый чай."
+  questions:
+    - text: "Где я обедал?"
+      expectedFacts:
+        - "пользователь обедал в Tokyo City"
+      forbiddenFacts:
+        - "пользователь обедал в Harvest"
+      mustNotSayUnknown: true
+
+- id: "event_food_001"
+  category: "EVENT"
+  save:
+    - "На обед ходил в Tokyo City, заказал том ям и зеленый чай."
+  questions:
+    - text: "Что я ел на обед?"
+      expectedFacts:
+        - "на обед пользователь ел том ям"
+        - "пользователь пил зеленый чай"
+      forbiddenFacts:
+        - "пользователь ел хинкали"
+      mustNotSayUnknown: true
+
+- id: "diary_wakeup_001"
+  category: "TEMPORAL"
+  save:
+    - "Сегодня встал в 8:15, позавтракал овсянкой и поехал в офис на Петроградской."
+  questions:
+    - text: "Во сколько я сегодня встал?"
+      expectedFacts:
+        - "пользователь встал в 8:15"
+      forbiddenFacts:
+        - "пользователь встал в 9:15"
+      mustNotSayUnknown: true
+
+- id: "diary_workplace_001"
+  category: "TEMPORAL"
+  save:
+    - "Сегодня встал в 8:15, позавтракал овсянкой и поехал в офис на Петроградской."
+  questions:
+    - text: "Где я сегодня работал?"
+      expectedFacts:
+        - "пользователь был в офисе на Петроградской"
+      forbiddenFacts:
+        - "пользователь работал на Новгородской"
+      mustNotSayUnknown: true
+
+- id: "diary_sleep_001"
+  category: "TEMPORAL"
+  save:
+    - "Вечером посмотрел две серии сериала Разделение и лег спать около 23:40."
+  questions:
+    - text: "Во сколько я лег спать?"
+      expectedFacts:
+        - "пользователь лег спать около 23:40"
+      forbiddenFacts:
+        - "пользователь лег спать в 22:00"
+      mustNotSayUnknown: true
+
+- id: "diary_watch_001"
+  category: "EVENT"
+  save:
+    - "Вечером посмотрел две серии сериала Разделение и лег спать около 23:40."
+  questions:
+    - text: "Какой сериал я смотрел вечером?"
+      expectedFacts:
+        - "пользователь смотрел сериал Разделение вечером"
+      forbiddenFacts:
+        - "пользователь смотрел сериал Мгла"
+      mustNotSayUnknown: true
+
+- id: "work_note_001"
+  category: "WORK"
+  save:
+    - "На созвоне решили перенести Kafka consumer в отдельный сервис и добавить retry policy."
+  questions:
+    - text: "Что решили сделать с Kafka consumer?"
+      expectedFacts:
+        - "Kafka consumer решили перенести в отдельный сервис"
+        - "решили добавить retry policy"
+      forbiddenFacts:
+        - "решили удалить Kafka consumer"
+      mustNotSayUnknown: true
+
+- id: "work_note_002"
+  category: "WORK"
+  save:
+    - "Проблема в проде: batch job падает из-за timeout при чтении больших таблиц."
+  questions:
+    - text: "Почему падает batch job?"
+      expectedFacts:
+        - "batch job падает из-за timeout при чтении больших таблиц"
+      forbiddenFacts:
+        - "batch job падает из-за Kafka"
+      mustNotSayUnknown: true
+
+- id: "learning_fact_001"
+  category: "LEARNING"
+  save:
+    - "pgvector лучше использовать вместе с full-text search, чтобы ловить и смысл, и точные термины."
+  questions:
+    - text: "С чем лучше использовать pgvector?"
+      expectedFacts:
+        - "pgvector лучше использовать вместе с full-text search"
+      forbiddenFacts:
+        - "pgvector лучше использовать без full-text search"
+      mustNotSayUnknown: true
+
+- id: "plan_travel_001"
+  category: "PLAN"
+  save:
+    - "Летом хочу съездить в Казань, посмотреть билеты и жилье ближе к июлю."
+  questions:
+    - text: "Куда я хочу съездить летом?"
+      expectedFacts:
+        - "пользователь хочет съездить летом в Казань"
+      forbiddenFacts:
+        - "пользователь хочет съездить в Калининград"
+      mustNotSayUnknown: true
+
+- id: "reminder_health_001"
+  category: "REMINDER"
+  save:
+    - "30 июня в 15:00 прием у ортодонта."
+  questions:
+    - text: "Что у меня 30 июня в 15:00?"
+      expectedFacts:
+        - "30 июня в 15:00 прием у ортодонта"
+      forbiddenFacts:
+        - "30 июня в 15:00 поездка"
+      mustNotSayUnknown: true
+
+- id: "similar_entities_001"
+  category: "SIMILAR_ENTITY"
+  save:
+    - "Андрей работает дизайнером. Алексей работает backend-разработчиком."
+  questions:
+    - text: "Кто работает backend-разработчиком?"
+      expectedFacts:
+        - "Алексей работает backend-разработчиком"
+      forbiddenFacts:
+        - "Андрей работает backend-разработчиком"
+      mustNotSayUnknown: true
+
+- id: "similar_entities_002"
+  category: "SIMILAR_ENTITY"
+  save:
+    - "Купил кабель Anker в DNS. Кабель Baseus заказал на Ozon."
+  questions:
+    - text: "Где купил кабель Baseus?"
+      expectedFacts:
+        - "кабель Baseus заказан на Ozon"
+      forbiddenFacts:
+        - "кабель Baseus куплен в DNS"
+      mustNotSayUnknown: true
+
+- id: "synonym_purchase_001"
+  category: "SYNONYM"
+  save:
+    - "Приобрел настольную лампу Xiaomi в МВидео."
+  questions:
+    - text: "Что я купил в МВидео?"
+      expectedFacts:
+        - "пользователь приобрел настольную лампу Xiaomi в МВидео"
+      forbiddenFacts:
+        - "пользователь купил монитор"
+      mustNotSayUnknown: true
+
+- id: "synonym_meeting_001"
+  category: "SYNONYM"
+  save:
+    - "Вчера пересекся с Никитой в кофейне и обсудил отпуск."
+  questions:
+    - text: "С кем я встречался в кофейне?"
+      expectedFacts:
+        - "пользователь встречался с Никитой в кофейне"
+      forbiddenFacts:
+        - "пользователь встречался с Романом"
+      mustNotSayUnknown: true
+
+- id: "preference_negative_001"
+  category: "NEGATION"
+  save:
+    - "Мне не нравится кофе с сильной кислинкой."
+  questions:
+    - text: "Какой кофе мне не нравится?"
+      expectedFacts:
+        - "пользователю не нравится кофе с сильной кислинкой"
+      forbiddenFacts:
+        - "пользователю нравится кофе с сильной кислинкой"
+      mustNotSayUnknown: true
+
+- id: "preference_positive_001"
+  category: "PREFERENCE"
+  save:
+    - "Мне понравился кофе из Эфиопии с ягодными нотами."
+  questions:
+    - text: "Что мне нравится в кофе?"
+      expectedFacts:
+        - "пользователю нравится кофе из Эфиопии"
+        - "пользователю нравятся ягодные ноты"
+      forbiddenFacts:
+        - "пользователю нравится кофе с шоколадным профилем"
+      mustNotSayUnknown: true
+
+- id: "fact_change_001"
+  category: "TEMPORAL_CHANGE"
+  save:
+    - "Раньше мой семейный врач был Петров."
+    - "Теперь мой семейный врач Соколова."
+  questions:
+    - text: "Кто сейчас мой семейный врач?"
+      expectedFacts:
+        - "сейчас семейный врач пользователя Соколова"
+      forbiddenFacts:
+        - "сейчас семейный врач пользователя Петров"
+      mustNotSayUnknown: true
+
+- id: "fact_change_002"
+  category: "TEMPORAL_CHANGE"
+  save:
+    - "Сначала хотел купить iPad mini, но потом решил брать Samsung Tab S9."
+  questions:
+    - text: "Какой планшет я решил брать?"
+      expectedFacts:
+        - "пользователь решил брать Samsung Tab S9"
+      forbiddenFacts:
+        - "пользователь решил брать iPad mini"
+      mustNotSayUnknown: true
+
+- id: "unknown_no_answer_001"
+  category: "NO_ANSWER"
+  save:
+    - "Мой ортодонт Дубовская."
+  questions:
+    - text: "Где работает Дубовская?"
+      expectedFacts: []
+      forbiddenFacts:
+        - "Дубовская работает в конкретном месте"
+      mustSayUnknown: true
+
+- id: "unknown_no_answer_002"
+  category: "NO_ANSWER"
+  save:
+    - "Купил монитор Dell в DNS."
+  questions:
+    - text: "Сколько стоил монитор?"
+      expectedFacts: []
+      forbiddenFacts:
+        - "монитор стоил конкретную сумму"
+      mustSayUnknown: true
+
+- id: "place_visit_001"
+  category: "EVENT"
+  save:
+    - "В субботу ездили в Выборг. Поднялись на башню Святого Олафа, потом пообедали в ресторане."
+  questions:
+    - text: "На какую башню мы поднимались в Выборге?"
+      expectedFacts:
+        - "поднимались на башню Святого Олафа"
+      forbiddenFacts:
+        - "поднимались на башню Гедимина"
+      mustNotSayUnknown: true
+
+- id: "place_restaurant_001"
+  category: "EVENT"
+  save:
+    - "В субботу ездили в Выборг. Поднялись на башню Святого Олафа, потом пообедали в ресторане Круглая башня."
+  questions:
+    - text: "Где мы обедали в Выборге?"
+      expectedFacts:
+        - "обедали в ресторане Круглая башня"
+      forbiddenFacts:
+        - "обедали в Tokyo City"
+      mustNotSayUnknown: true
+
+- id: "pet_preference_001"
+  category: "PREFERENCE"
+  save:
+    - "Моя собака Боня любит грызть тапки, но не любит сухой корм."
+  questions:
+    - text: "Что любит Боня?"
+      expectedFacts:
+        - "Боня любит грызть тапки"
+      forbiddenFacts:
+        - "Боня любит сухой корм"
+      mustNotSayUnknown: true
+
+- id: "pet_negation_001"
+  category: "NEGATION"
+  save:
+    - "Моя собака Боня любит грызть тапки, но не любит сухой корм."
+  questions:
+    - text: "Что Боня не любит?"
+      expectedFacts:
+        - "Боня не любит сухой корм"
+      forbiddenFacts:
+        - "Боня не любит тапки"
+      mustNotSayUnknown: true
+
+- id: "finance_subscription_001"
+  category: "FINANCE"
+  save:
+    - "Нужно проверить подписки: музыка 299 рублей, облако 199 рублей, VPN 450 рублей."
+  questions:
+    - text: "Сколько стоит VPN подписка?"
+      expectedFacts:
+        - "VPN подписка стоит 450 рублей"
+      forbiddenFacts:
+        - "VPN подписка стоит 199 рублей"
+      mustNotSayUnknown: true
+
+- id: "health_medicine_001"
+  category: "HEALTH"
+  save:
+    - "После консультации врач сказал купить витамин D и принимать утром."
+  questions:
+    - text: "Когда принимать витамин D?"
+      expectedFacts:
+        - "витамин D нужно принимать утром"
+      forbiddenFacts:
+        - "витамин D нужно принимать вечером"
+      mustNotSayUnknown: true
+
+- id: "recipe_ingredient_001"
+  category: "RECIPE"
+  save:
+    - "Рецепт пельменей: фарш, тесто, лук, соль и перец."
+  questions:
+    - text: "Что приготовить из фарша?"
+      expectedFacts:
+        - "из фарша можно приготовить пельмени"
+      forbiddenFacts:
+        - "из фарша можно приготовить пасту с курицей"
+      mustNotSayUnknown: true
+
+- id: "recipe_dinner_001"
+  category: "RECIPE"
+  save:
+    - "Идея ужина: паста с курицей и грибами в сливочном соусе."
+  questions:
+    - text: "Что приготовить с курицей и грибами?"
+      expectedFacts:
+        - "можно приготовить пасту с курицей и грибами в сливочном соусе"
+      forbiddenFacts:
+        - "можно приготовить пельмени"
+      mustNotSayUnknown: true
+
+- id: "project_idea_001"
+  category: "PROJECT"
+  save:
+    - "Идея для пет-проекта: автоматически формировать краткое резюме недели из дневниковых записей."
+  questions:
+    - text: "Какая была идея для пет-проекта про дневники?"
+      expectedFacts:
+        - "идея автоматически формировать краткое резюме недели из дневниковых записей"
+      forbiddenFacts:
+        - "идея делать календарь семейных праздников"
+      mustNotSayUnknown: true
+
+- id: "work_person_story_001"
+  category: "RELATIONSHIP"
+  save:
+    - "Историю про Андрюху мне рассказал Саша на кухне офиса."
+  questions:
+    - text: "Кто мне рассказал историю про Андрюху?"
+      expectedFacts:
+        - "историю про Андрюху рассказал Саша"
+      forbiddenFacts:
+        - "историю про Андрюху рассказал Андрей"
+      mustNotSayUnknown: true
+
+- id: "dislike_person_001"
+  category: "NEGATION"
+  save:
+    - "Саше не нравится новый менеджер из-за грубого общения."
+  questions:
+    - text: "Кто не нравится Саше?"
+      expectedFacts:
+        - "Саше не нравится новый менеджер"
+      forbiddenFacts:
+        - "Саше нравится новый менеджер"
+      mustNotSayUnknown: true
+
+- id: "address_fact_001"
+  category: "PLACE"
+  save:
+    - "Сервисный центр ReStart находится на Лиговском 50."
+  questions:
+    - text: "Где находится ReStart?"
+      expectedFacts:
+        - "ReStart находится на Лиговском 50"
+      forbiddenFacts:
+        - "ReStart находится на Невском"
+      mustNotSayUnknown: true
+
+- id: "movie_watch_001"
+  category: "MEDIA"
+  save:
+    - "Хочу посмотреть фильм Дюна 2 и сериал Медленные лошади."
+  questions:
+    - text: "Какие фильмы или сериалы я хотел посмотреть?"
+      expectedFacts:
+        - "пользователь хотел посмотреть фильм Дюна 2"
+        - "пользователь хотел посмотреть сериал Медленные лошади"
+      forbiddenFacts:
+        - "пользователь хотел посмотреть Разделение"
+      mustNotSayUnknown: true
+
+- id: "book_read_001"
+  category: "MEDIA"
+  save:
+    - "Почитать книгу Проект Аве Мария после отпуска."
+  questions:
+    - text: "Что я хотел почитать?"
+      expectedFacts:
+        - "пользователь хотел почитать книгу Проект Аве Мария"
+      forbiddenFacts:
+        - "пользователь хотел почитать Clean Code"
+      mustNotSayUnknown: true
+
+- id: "event_why_001"
+  category: "WHY"
+  save:
+    - "Опоздал на встречу, потому что поезд задержали на двадцать минут."
+  questions:
+    - text: "Почему я опоздал на встречу?"
+      expectedFacts:
+        - "пользователь опоздал из-за задержки поезда на двадцать минут"
+      forbiddenFacts:
+        - "пользователь опоздал из-за пробок"
+      mustNotSayUnknown: true
+
+- id: "recipient_001"
+  category: "RECIPIENT"
+  save:
+    - "Купить открытку для Лены и отправить ее до пятницы."
+  questions:
+    - text: "Кому нужно купить открытку?"
+      expectedFacts:
+        - "открытку нужно купить для Лены"
+      forbiddenFacts:
+        - "открытку нужно купить для Алисы"
+      mustNotSayUnknown: true
