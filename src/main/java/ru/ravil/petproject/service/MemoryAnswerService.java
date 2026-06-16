@@ -23,7 +23,7 @@ public class MemoryAnswerService {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryAnswerService.class);
 
-    private static final int MAX_CONTEXT_ITEMS = 5;
+    private static final int MAX_CONTEXT_ITEMS = 10;
     private static final double MIN_CONFIDENCE = 0.55d;
     private static final List<String> QUESTION_PREFIXES = List.of(
             "что ",
@@ -50,13 +50,27 @@ public class MemoryAnswerService {
             Return only valid JSON. Do not wrap JSON in markdown.
             JSON shape:
             {
+              "canAnswer": true,
               "answer": "short answer in the user's language, or empty string if evidence is insufficient",
               "confidence": 0.0,
-              "sourceIndexes": [1]
+              "sourceIndexes": [1],
+              "ignoredSourceIndexes": [2],
+              "missingInfo": false,
+              "reason": "short reason for source selection"
             }
             Rules:
             - Do not use outside knowledge.
             - Do not invent facts, dates, places, people, reasons, or relationships.
+            - First select only memory units that directly answer the exact question.
+            - Ignore memory units that only share a broad topic, organization, object type, date, or tag.
+            - Ignore memories about another person if the question is about the user, unless that other person is explicitly named.
+            - If several memories mention similar objects, people, places, or dates, use only the ones matching the requested
+              subject, action/relation, place, and time.
+            - If the question asks for a specific attribute such as price, place, time, reason, person, or source, answer only
+              when that exact attribute is present in the selected sourceIndexes.
+            - If selected sources do not contain the requested attribute, set canAnswer=false, missingInfo=true,
+              answer="", confidence<=0.4, and sourceIndexes=[].
+            - If no source directly supports the answer, set canAnswer=false and sourceIndexes=[].
             - Prefer direct answers over restating the whole note.
             - Answer only when the retrieved memory contains direct evidence for the requested relation.
             - If the question asks where, use PLACE or ORGANIZATION slots when present.
@@ -69,6 +83,7 @@ public class MemoryAnswerService {
               use matching SUBJECT/ACTION/OBJECT slots or equivalent title/summary/source text.
             - If multiple memories answer the question, summarize them compactly and include all relevant source indexes.
             - If the retrieved memories are only weakly related to the question, return an empty answer with low confidence.
+            - sourceIndexes must include every memory unit used in the answer and no memory unit ignored as noise.
             """;
 
     private final ObjectProvider<OpenAiClient> openAiClientProvider;
@@ -109,17 +124,20 @@ public class MemoryAnswerService {
         JsonNode root = objectMapper.readTree(json);
         String answer = text(root, "answer");
         double confidence = confidence(root);
-        if (!StringUtils.hasText(answer) || confidence < MIN_CONFIDENCE) {
+        boolean canAnswer = root.path("canAnswer").asBoolean(StringUtils.hasText(answer));
+        boolean missingInfo = root.path("missingInfo").asBoolean(false);
+        List<Integer> sourceIndexes = sourceIndexes(root);
+        if (!canAnswer || missingInfo || !StringUtils.hasText(answer) || confidence < MIN_CONFIDENCE || sourceIndexes.isEmpty()) {
             return Optional.empty();
         }
 
-        List<MemoryUnitResponse> sources = sourceIndexes(root).stream()
+        List<MemoryUnitResponse> sources = sourceIndexes.stream()
                 .filter(index -> index >= 1 && index <= context.size())
                 .map(index -> context.get(index - 1))
                 .distinct()
                 .toList();
-        if (sources.isEmpty() && !context.isEmpty()) {
-            sources = List.of(context.getFirst());
+        if (sources.isEmpty()) {
+            return Optional.empty();
         }
 
         return Optional.of(new MemoryAnswer(answer, sources, confidence));

@@ -48,9 +48,13 @@ class MemoryAnswerServiceTest {
         when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
         when(openAiClient.classify(anyString(), contains("USB-C кабель"))).thenReturn("""
                 {
+                  "canAnswer": true,
                   "answer": "USB-C кабель куплен в магазине DNS, по записи от 2026-06-14.",
                   "confidence": 0.86,
-                  "sourceIndexes": [1]
+                  "sourceIndexes": [1],
+                  "ignoredSourceIndexes": [2],
+                  "missingInfo": false,
+                  "reason": "source 1 directly mentions the cable purchase place"
                 }
                 """);
 
@@ -88,14 +92,63 @@ class MemoryAnswerServiceTest {
         when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
         when(openAiClient.classify(anyString(), anyString())).thenReturn("""
                 {
+                  "canAnswer": true,
                   "answer": "Возможно, в DNS.",
                   "confidence": 0.3,
-                  "sourceIndexes": [1]
+                  "sourceIndexes": [1],
+                  "ignoredSourceIndexes": [],
+                  "missingInfo": false,
+                  "reason": "weak evidence"
                 }
                 """);
 
         Optional<MemoryAnswer> answer = service.answer("где я купил кабель?", List.of(
                 response("Купил USB-C кабель", "Куплен USB-C кабель", Set.of())
+        ));
+
+        assertThat(answer).isEmpty();
+    }
+
+    @Test
+    void answerReturnsEmptyWhenModelCannotSelectDirectSources() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "canAnswer": false,
+                  "answer": "",
+                  "confidence": 0.2,
+                  "sourceIndexes": [],
+                  "ignoredSourceIndexes": [1, 2],
+                  "missingInfo": true,
+                  "reason": "retrieved memories mention monitors but none contains the requested price"
+                }
+                """);
+
+        Optional<MemoryAnswer> answer = service.answer("сколько стоил монитор?", List.of(
+                response("Купил монитор Dell", "Куплен монитор Dell", Set.of()),
+                response("Купил мышку Logitech за 6490 рублей", "Куплена мышка Logitech", Set.of())
+        ));
+
+        assertThat(answer).isEmpty();
+    }
+
+    @Test
+    void answerReturnsEmptyWhenModelOmitsSourceIndexes() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "canAnswer": true,
+                  "answer": "Монитор стоил 27990 рублей.",
+                  "confidence": 0.9,
+                  "sourceIndexes": [],
+                  "ignoredSourceIndexes": [],
+                  "missingInfo": false,
+                  "reason": "answer has no explicit supporting source"
+                }
+                """);
+
+        Optional<MemoryAnswer> answer = service.answer("сколько стоил монитор?", List.of(
+                response("Купил монитор Dell за 27990 рублей", "Куплен монитор Dell", Set.of())
         ));
 
         assertThat(answer).isEmpty();

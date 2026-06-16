@@ -34,6 +34,9 @@ public class AiTelegramIntentDetector {
             reading/watching activity, or conclusion, choose CAPTURE.
             Questions inside a statement do not make it SEARCH. SEARCH requires the whole message to ask the assistant
             to recall existing saved memory.
+            Colloquial Russian questions are SEARCH too: "че", "чё", "скок", "шо", "чо".
+            "почему мне ...", "что мне нравится ...", "что я думаю про ...", "с чем использовать ...",
+            "где брал ...", "куда ездил ...", "с кем встречался ..." are SEARCH when they ask about saved memory.
             Do not classify casual save phrases as SEARCH.
             Examples:
             "хочу посмотреть Мглу" -> {"intent":"CAPTURE","query":"","tags":[],"period":"ALL"}
@@ -41,6 +44,12 @@ public class AiTelegramIntentDetector {
             "вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search" -> {"intent":"CAPTURE","query":"","tags":[],"period":"ALL"}
             "купил кабель в DNS" -> {"intent":"CAPTURE","query":"","tags":[],"period":"ALL"}
             "а что там было про кухню?" -> {"intent":"SEARCH","query":"кухня","tags":[],"period":"ALL"}
+            "че я покупал вчера" -> {"intent":"SEARCH","query":"покупал","tags":[],"period":"YESTERDAY"}
+            "скок стоила мышка?" -> {"intent":"SEARCH","query":"мышка цена стоимость","tags":[],"period":"ALL"}
+            "почему мне не понравились Северяне?" -> {"intent":"SEARCH","query":"Северяне не понравилось причина","tags":[],"period":"ALL"}
+            "что мне нравится в кофе?" -> {"intent":"SEARCH","query":"кофе нравится предпочтения","tags":[],"period":"ALL"}
+            "что я думаю про pgvector?" -> {"intent":"SEARCH","query":"pgvector мнение","tags":[],"period":"ALL"}
+            "с чем использовать pgvector?" -> {"intent":"SEARCH","query":"pgvector использовать","tags":[],"period":"ALL"}
             "где я писал про кресло" -> {"intent":"SEARCH","query":"кресло","tags":[],"period":"ALL"}
             "какие книги я хотел купить" -> {"intent":"SEARCH","query":"книги купить","tags":[],"period":"ALL"}
             "где я купил кабель?" -> {"intent":"SEARCH","query":"купил кабель","tags":[],"period":"ALL"}
@@ -94,17 +103,31 @@ public class AiTelegramIntentDetector {
         return normalized.endsWith("?")
                 || normalized.startsWith("а что ")
                 || normalized.startsWith("что ")
+                || normalized.startsWith("че ")
+                || normalized.startsWith("чё ")
+                || normalized.startsWith("чо ")
+                || normalized.startsWith("шо ")
                 || normalized.startsWith("где ")
                 || normalized.startsWith("когда ")
                 || normalized.startsWith("какой ")
                 || normalized.startsWith("какая ")
                 || normalized.startsWith("какие ")
                 || normalized.startsWith("какую ")
+                || normalized.startsWith("какое ")
                 || normalized.startsWith("кто ")
                 || normalized.startsWith("кого ")
                 || normalized.startsWith("кому ")
                 || normalized.startsWith("кем ")
                 || normalized.startsWith("чем ")
+                || normalized.startsWith("сколько ")
+                || normalized.startsWith("скок ")
+                || normalized.startsWith("почему ")
+                || normalized.startsWith("зачем ")
+                || normalized.startsWith("куда ")
+                || normalized.startsWith("откуда ")
+                || normalized.startsWith("с кем ")
+                || normalized.startsWith("с чем ")
+                || normalized.startsWith("про что ")
                 || normalized.startsWith("во что ")
                 || normalized.startsWith("как ")
                 || normalized.startsWith("напомни ");

@@ -3,6 +3,8 @@ package ru.ravil.petproject.telegram;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
 import ru.ravil.petproject.service.SearchPeriod;
 
@@ -202,6 +204,30 @@ class RuleBasedTelegramIntentDetectorTest {
         assertThat(intent.type()).isEqualTo(TelegramIntentType.SEARCH);
         assertThat(intent.query()).isEqualTo("рецепты");
         assertThat(intent.tags()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "че я покупал вчера",
+            "чё я покупал вчера",
+            "скок стоила мышка",
+            "сколько стоил монитор",
+            "почему мне не понравились Северяне",
+            "что мне нравится в кофе",
+            "что я думаю про pgvector",
+            "с чем использовать pgvector",
+            "с кем встречался вчера",
+            "куда ездил в субботу",
+            "откуда заказал клавиатуру",
+            "где брал кабель",
+            "кто мне советовал книжку",
+            "про что была статья",
+            "зачем я покупал переходник"
+    })
+    void detectConversationalQuestionSearch(String text) {
+        TelegramIntent intent = detector.detect(text);
+
+        assertThat(intent.type()).isEqualTo(TelegramIntentType.SEARCH);
     }
 
     @Test

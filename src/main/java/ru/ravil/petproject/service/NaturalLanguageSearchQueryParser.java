@@ -30,6 +30,10 @@ public class NaturalLanguageSearchQueryParser {
 
     private static final List<String> QUESTION_SEARCH_PREFIXES = List.of(
             "что ",
+            "че ",
+            "чё ",
+            "чо ",
+            "шо ",
             "какие ",
             "какой ",
             "какая ",
@@ -39,6 +43,15 @@ public class NaturalLanguageSearchQueryParser {
             "кому ",
             "кем ",
             "чем ",
+            "сколько ",
+            "скок ",
+            "почему ",
+            "зачем ",
+            "куда ",
+            "откуда ",
+            "с кем ",
+            "с чем ",
+            "про что ",
             "во что ",
             "когда мне ",
             "когда ",
@@ -216,7 +229,11 @@ public class NaturalLanguageSearchQueryParser {
                 || text.equals("что я добавлял вчера")
                 || text.equals("что я вчера добавлял")
                 || text.equals("что добавлял вчера")
-                || text.equals("что вчера добавлял");
+                || text.equals("что вчера добавлял")
+                || text.equals("че я покупал вчера")
+                || text.equals("чё я покупал вчера")
+                || text.equals("че покупал вчера")
+                || text.equals("чё покупал вчера");
     }
 
     private String cleanQuery(String query) {
