@@ -59,12 +59,15 @@ public class AiMemoryUnitExtractionService {
                 }
               ]
             }
-            Extract 1-8 units. Split long or mixed notes into independent useful memories.
+            Extract 1-16 units. Split long or mixed notes into independent useful memories.
             Prefer units that would answer future user questions.
             Do not invent details that are not present in the note.
             Keep each unit self-contained: it should make sense without reading the whole note.
             Avoid duplicate units. Do not create a broad summary unit if specific units already capture the useful memory,
             unless the whole note itself is a useful memory.
+            For diary-like notes, preserve the timeline and extract concrete memories for wake/sleep times,
+            meals, meetings, work/study, purchases with prices, visited places, workouts, watched/read/listened items,
+            and ideas or conclusions. Do not drop concrete facts just because the note is long.
             Add slots for searchable meaning: who/what did something, action, object, place, time, amount,
             price, organization, topic, and important attributes. Do not use a fixed ontology of people or domains;
             slots must work for any subject, including a person, pet, object, project, company, place, or idea.

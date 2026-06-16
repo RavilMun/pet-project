@@ -314,7 +314,7 @@ class InboxItemSearchServiceTest {
     }
 
     @Test
-    void advancedSearchDoesNotExpandUntypedLexicalResultsWithVectorNoise() {
+    void advancedSearchDoesNotReturnVectorNoiseForUntypedLexicalResults() {
         MemoryUnit preferred = persistedUnit("Маше нравятся цветы", "Маше нравятся цветы", MemoryUnitType.PREFERENCE,
                 Set.of("цветы", "предпочтения", "маше"));
 
@@ -342,7 +342,6 @@ class InboxItemSearchServiceTest {
 
         assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
                 .containsExactly("Маше нравятся цветы");
-        verify(aiEmbeddingServiceProvider, never()).getIfAvailable();
     }
 
     @Test
@@ -436,6 +435,159 @@ class InboxItemSearchServiceTest {
         assertThat(responses.getFirst().slots())
                 .extracting(slot -> slot.role().name() + ":" + slot.normalizedValue())
                 .contains("OBJECT:usb-c кабель", "PLACE:dns");
+    }
+
+    @Test
+    void advancedSearchFiltersQuestionCandidateWhenAnchorObjectIsMissing() {
+        MemoryUnit unrelatedProfessionalFact = persistedUnit(
+                "Дубовская это ортодонт",
+                "Дубовская является ортодонтом",
+                MemoryUnitType.FACT,
+                Set.of("специалист", "ортодонт", "дубовская"),
+                new SlotSpec(MemorySlotRole.PERSON, "Дубовская", "дубовская"),
+                new SlotSpec(MemorySlotRole.ATTRIBUTE, "ортодонт", "ортодонт")
+        );
+        unrelatedProfessionalFact.setSummary("Дубовская работает как специалист в области ортодонтии.");
+
+        when(memoryUnitRepository.searchAdvanced(
+                "Где работает Стас?",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of(unrelatedProfessionalFact)));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "Где работает Стас?",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).isEmpty();
+    }
+
+    @Test
+    void advancedSearchKeepsQuestionCandidateWhenAnchorObjectIsPresent() {
+        MemoryUnit professionalFact = persistedUnit(
+                "Дубовская это ортодонт",
+                "Дубовская является ортодонтом",
+                MemoryUnitType.FACT,
+                Set.of("специалист", "ортодонт", "дубовская"),
+                new SlotSpec(MemorySlotRole.PERSON, "Дубовская", "дубовская"),
+                new SlotSpec(MemorySlotRole.ATTRIBUTE, "ортодонт", "ортодонт")
+        );
+        professionalFact.setSummary("Дубовская работает как специалист в области ортодонтии.");
+
+        when(memoryUnitRepository.searchAdvanced(
+                "Кто такая Дубовская?",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of(professionalFact)));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "Кто такая Дубовская?",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("Дубовская это ортодонт");
+    }
+
+    @Test
+    void advancedSearchDoesNotReturnStoredQuestionsForOrdinarySearch() {
+        MemoryUnit storedQuestion = persistedUnit(
+                "Кто такая Дубовская",
+                "Кто такая Дубовская?",
+                MemoryUnitType.QUESTION,
+                Set.of("вопрос", "дубовская")
+        );
+        MemoryUnit professionalFact = persistedUnit(
+                "Дубовская это ортодонт",
+                "Дубовская является ортодонтом",
+                MemoryUnitType.FACT,
+                Set.of("специалист", "ортодонт", "дубовская"),
+                new SlotSpec(MemorySlotRole.PERSON, "Дубовская", "дубовская"),
+                new SlotSpec(MemorySlotRole.ATTRIBUTE, "ортодонт", "ортодонт")
+        );
+
+        when(memoryUnitRepository.searchAdvanced(
+                "Кто такая Дубовская?",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of(storedQuestion, professionalFact)));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "Кто такая Дубовская?",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("Дубовская это ортодонт");
+    }
+
+    @Test
+    void advancedSearchCanReturnStoredQuestionsWhenQuestionTypeIsExplicit() {
+        MemoryUnit storedQuestion = persistedUnit(
+                "Кто такая Дубовская",
+                "Кто такая Дубовская?",
+                MemoryUnitType.QUESTION,
+                Set.of("вопрос", "дубовская")
+        );
+
+        when(memoryUnitRepository.searchAdvanced(
+                "дубовская",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("QUESTION"),
+                true,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of(storedQuestion)));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "дубовская",
+                Set.of(InboxItemType.QUESTION),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("Кто такая Дубовская");
     }
 
     @Test
@@ -639,7 +791,162 @@ class InboxItemSearchServiceTest {
         );
 
         assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
-                .containsExactly("хочу посмотреть фильм Мгла", "хочу посмотреть сериал Severance");
+                .containsExactly("хочу посмотреть сериал Severance", "хочу посмотреть фильм Мгла");
+    }
+
+    @Test
+    void advancedSearchFiltersVectorOnlyNoiseWhenQueryHasNoLocalEvidence() {
+        MemoryUnit unrelated = persistedUnit(
+                "Разобраться с pgvector для семантического поиска в PostgreSQL",
+                "Разобраться с pgvector",
+                MemoryUnitType.TASK,
+                Set.of("postgresql", "pgvector", "поиск")
+        );
+        stubEmptyLexicalSearch("во что хотел поиграть?", "хотел:* | поиграть:*", "во что хотел поиграть?");
+        when(aiEmbeddingServiceProvider.getIfAvailable()).thenReturn(aiEmbeddingService);
+        when(aiEmbeddingService.embed("во что хотел поиграть?"))
+                .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-embedding")));
+        when(memoryUnitRepository.searchNearestByEmbedding(
+                "[0.1,0.2]",
+                Set.of("__no_types__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(List.of(unrelated));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "во что хотел поиграть?",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).isEmpty();
+    }
+
+    @Test
+    void advancedSearchKeepsVectorOnlyCandidateWhenItHasLocalEvidence() {
+        MemoryUnit game = persistedUnit(
+                "Хочу поиграть в Expedition 33",
+                "Поиграть в Expedition 33",
+                MemoryUnitType.NOTE,
+                Set.of("игра", "expedition 33")
+        );
+        stubEmptyLexicalSearch("во что хотел поиграть?", "хотел:* | поиграть:*", "во что хотел поиграть?");
+        when(aiEmbeddingServiceProvider.getIfAvailable()).thenReturn(aiEmbeddingService);
+        when(aiEmbeddingService.embed("во что хотел поиграть?"))
+                .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-embedding")));
+        when(memoryUnitRepository.searchNearestByEmbedding(
+                "[0.1,0.2]",
+                Set.of("__no_types__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(List.of(game));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "во что хотел поиграть?",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("Хочу поиграть в Expedition 33");
+    }
+
+    @Test
+    void advancedSearchKeepsObjectMatchWhenQuestionAsksForAttribute() {
+        MemoryUnit mouse = persistedUnit(
+                "После работы заехал в DNS и купил беспроводную мышку Logitech MX Anywhere 3 за 6490 рублей",
+                "Покупка беспроводной мышки Logitech MX Anywhere 3 в DNS за 6490 рублей",
+                MemoryUnitType.PURCHASE_RESEARCH,
+                Set.of("техника", "logitech", "dns", "покупка", "мышь"),
+                new SlotSpec(MemorySlotRole.OBJECT, "беспроводная мышка Logitech MX Anywhere 3", "мышка logitech mx anywhere 3"),
+                new SlotSpec(MemorySlotRole.PRICE, "6490 рублей", "6490 рублей")
+        );
+
+        when(memoryUnitRepository.searchAdvanced(
+                "мышка цена",
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of(mouse)));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "мышка цена",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.ALL,
+                10
+        );
+
+        assertThat(responses).extracting(MemoryUnitResponse::sourceRawText)
+                .containsExactly("После работы заехал в DNS и купил беспроводную мышку Logitech MX Anywhere 3 за 6490 рублей");
+    }
+
+    @Test
+    void advancedSearchCanUseDateBoundedSemanticCandidateWhenLexicalMatchIsWeak() {
+        MemoryUnit weakLexicalMatch = persistedUnit(
+                "Дубовская работает на Новгородской 13",
+                "Дубовская работает на Новгородской 13",
+                MemoryUnitType.FACT,
+                Set.of("адрес", "новгородская", "работа", "дубовская")
+        );
+        MemoryUnit semanticWorkContext = persistedUnit(
+                "Сегодня поехал в офис на Петроградской и встретился с Андреем для обсуждения нового проекта",
+                "Встреча с Андреем для обсуждения нового проекта в офисе на Петроградской",
+                MemoryUnitType.EVENT,
+                Set.of("встреча", "офис", "проект", "петроградская"),
+                new SlotSpec(MemorySlotRole.PLACE, "офис на Петроградской", "офис на петроградской"),
+                new SlotSpec(MemorySlotRole.PERSON, "Андрей", "андрей")
+        );
+
+        when(memoryUnitRepository.searchAdvancedBetween(
+                eq("работал"),
+                eq(true),
+                eq(""),
+                eq(false),
+                eq(""),
+                eq(false),
+                eq(Set.of("__no_types__")),
+                eq(false),
+                eq(Set.of("__no_tags__")),
+                eq(false),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                eq(PageRequest.of(0, 50))
+        )).thenReturn(new PageImpl<>(List.of(weakLexicalMatch)));
+        when(aiEmbeddingServiceProvider.getIfAvailable()).thenReturn(aiEmbeddingService);
+        when(aiEmbeddingService.embed("работал"))
+                .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-embedding")));
+        when(memoryUnitRepository.searchNearestByEmbeddingBetween(
+                eq("[0.1,0.2]"),
+                eq(Set.of("__no_types__")),
+                eq(false),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                eq(PageRequest.of(0, 50))
+        )).thenReturn(List.of(semanticWorkContext));
+
+        List<MemoryUnitResponse> responses = inboxItemSearchService.search(
+                "работал",
+                Set.of(),
+                Set.of(),
+                SearchPeriod.TODAY,
+                10
+        );
+
+        assertThat(responses).isNotEmpty();
+        assertThat(responses.getFirst().sourceRawText())
+                .isEqualTo("Сегодня поехал в офис на Петроградской и встретился с Андреем для обсуждения нового проекта");
     }
 
     @Test
@@ -652,6 +959,48 @@ class InboxItemSearchServiceTest {
 
         assertThat(responses).extracting(MemoryUnitResponse::title).containsExactly("unit");
         verify(memoryUnitRepository).findAllBySourceCreatedAtDesc(PageRequest.of(0, 5));
+    }
+
+    private void stubEmptyLexicalSearch(String query, String relaxedQuery, String containsQuery) {
+        when(memoryUnitRepository.searchAdvanced(
+                query,
+                true,
+                "",
+                false,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of()));
+        when(memoryUnitRepository.searchAdvanced(
+                "",
+                false,
+                relaxedQuery,
+                true,
+                "",
+                false,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of()));
+        when(memoryUnitRepository.searchAdvanced(
+                "",
+                false,
+                "",
+                false,
+                containsQuery,
+                true,
+                Set.of("__no_types__"),
+                false,
+                Set.of("__no_tags__"),
+                false,
+                PageRequest.of(0, 50)
+        )).thenReturn(new PageImpl<>(List.of()));
     }
 
     private static MemoryUnit persistedUnit(

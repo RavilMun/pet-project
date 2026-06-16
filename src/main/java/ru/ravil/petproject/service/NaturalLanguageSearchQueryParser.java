@@ -34,6 +34,12 @@ public class NaturalLanguageSearchQueryParser {
             "какой ",
             "какая ",
             "какое ",
+            "кто ",
+            "кого ",
+            "кому ",
+            "кем ",
+            "чем ",
+            "во что ",
             "когда мне ",
             "когда ",
             "где "
@@ -55,9 +61,7 @@ public class NaturalLanguageSearchQueryParser {
             "сегодняшний ",
             "сегодняшняя ",
             "сегодняшнее ",
-            "мои ",
-            "моя ",
-            "мой "
+            "мои "
     );
 
     public SearchQuery parse(String text) {
@@ -235,6 +239,10 @@ public class NaturalLanguageSearchQueryParser {
         cleaned = removeLeading(cleaned, "у меня ");
         cleaned = removeLeading(cleaned, "мне ");
         cleaned = removeLeading(cleaned, "к ");
+        cleaned = removeLeading(cleaned, "такая ");
+        cleaned = removeLeading(cleaned, "такой ");
+        cleaned = removeLeading(cleaned, "такое ");
+        cleaned = removeLeading(cleaned, "такие ");
         for (String prefix : GENERIC_SEARCH_PREFIXES) {
             if (cleaned.startsWith(prefix)) {
                 return cleanQuery(cleaned.substring(prefix.length()));

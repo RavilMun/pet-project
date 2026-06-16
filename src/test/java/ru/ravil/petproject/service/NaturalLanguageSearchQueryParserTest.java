@@ -121,6 +121,24 @@ class NaturalLanguageSearchQueryParserTest {
     }
 
     @Test
+    void parsesWhoIsQuestionAsSearch() {
+        SearchQuery query = parser.parse("Кто такая Дубовская?");
+
+        assertThat(query.type()).isEqualTo(SearchQueryType.SEARCH);
+        assertThat(query.text()).isEqualTo("дубовская");
+        assertThat(query.itemTypes()).isEmpty();
+    }
+
+    @Test
+    void parsesWhatToPlayQuestionAsSearch() {
+        SearchQuery query = parser.parse("во что хотел поиграть?");
+
+        assertThat(query.type()).isEqualTo(SearchQueryType.SEARCH);
+        assertThat(query.text()).isEqualTo("хотел поиграть");
+        assertThat(query.itemTypes()).isEmpty();
+    }
+
+    @Test
     void parsesSavedNounPhraseSearch() {
         SearchQuery query = parser.parse("сегодняшние рецепты пельменей");
 
@@ -184,6 +202,12 @@ class NaturalLanguageSearchQueryParserTest {
     @Test
     void returnsUnknownForCaptureText() {
         assertThat(parser.parse("хочу посмотреть фильм Мгла").type()).isEqualTo(SearchQueryType.UNKNOWN);
+    }
+
+    @Test
+    void returnsUnknownForPossessiveFactStatements() {
+        assertThat(parser.parse("Моя любимая IDE IntelliJ IDEA.").type()).isEqualTo(SearchQueryType.UNKNOWN);
+        assertThat(parser.parse("Мой терапевт Иванова.").type()).isEqualTo(SearchQueryType.UNKNOWN);
     }
 
     @Test

@@ -44,6 +44,9 @@ public class AiTelegramIntentDetector {
             "где я писал про кресло" -> {"intent":"SEARCH","query":"кресло","tags":[],"period":"ALL"}
             "какие книги я хотел купить" -> {"intent":"SEARCH","query":"книги купить","tags":[],"period":"ALL"}
             "где я купил кабель?" -> {"intent":"SEARCH","query":"купил кабель","tags":[],"period":"ALL"}
+            "где я работал сегодня?" -> {"intent":"SEARCH","query":"я работал офис работа","tags":[],"period":"TODAY"}
+            "сколько стоила мышка?" -> {"intent":"SEARCH","query":"мышка цена стоимость","tags":[],"period":"ALL"}
+            "что смотрел вечером?" -> {"intent":"SEARCH","query":"смотрел вечером сериал фильм","tags":[],"period":"ALL"}
             "что я сохранял вчера" -> {"intent":"SEARCH","query":"","tags":[],"period":"YESTERDAY"}
             """;
 
@@ -61,6 +64,10 @@ public class AiTelegramIntentDetector {
 
     public TelegramIntent detectAny(String text) {
         return detect(text, true);
+    }
+
+    public boolean shouldUseAiForIntent(String text) {
+        return StringUtils.hasText(text) && shouldAskAi(text);
     }
 
     private TelegramIntent detect(String text, boolean forceAi) {
@@ -93,6 +100,12 @@ public class AiTelegramIntentDetector {
                 || normalized.startsWith("какая ")
                 || normalized.startsWith("какие ")
                 || normalized.startsWith("какую ")
+                || normalized.startsWith("кто ")
+                || normalized.startsWith("кого ")
+                || normalized.startsWith("кому ")
+                || normalized.startsWith("кем ")
+                || normalized.startsWith("чем ")
+                || normalized.startsWith("во что ")
                 || normalized.startsWith("как ")
                 || normalized.startsWith("напомни ");
     }

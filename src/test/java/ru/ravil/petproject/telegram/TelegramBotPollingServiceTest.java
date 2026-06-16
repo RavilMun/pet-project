@@ -104,6 +104,27 @@ class TelegramBotPollingServiceTest {
     }
 
     @Test
+    void pollSavesPossessiveFactInsteadOfSearching() {
+        TelegramBotPollingService service = service(null);
+        String text = "Мой терапевт Иванова.";
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, text)));
+        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response("Мой терапевт Иванова"));
+
+        service.poll();
+
+        ArgumentCaptor<CreateInboxItemRequest> captor = ArgumentCaptor.forClass(CreateInboxItemRequest.class);
+        verify(inboxItemService).create(captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().rawText()).isEqualTo(text);
+        verify(inboxItemSearchService, never()).search(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
     void pollDoesNotSaveTextMessageWhenAiProcessingIsUnavailable() {
         TelegramBotPollingService service = service(null);
         TelegramUpdate update = update(100, 42, "remember docs");
@@ -257,6 +278,24 @@ class TelegramBotPollingServiceTest {
 
         verify(aiTelegramIntentDetector, never()).detect(anyString());
         verify(inboxItemSearchService).search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10);
+    }
+
+    @Test
+    void hybridSafeModeUsesAiBeforeRulesForNaturalQuestion() {
+        TelegramBotPollingService service = service(null, TelegramIntentMode.HYBRID_SAFE);
+        String text = "Где я работал сегодня?";
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, text)));
+        when(aiTelegramIntentDetector.shouldUseAiForIntent(text)).thenReturn(true);
+        when(aiTelegramIntentDetector.detect(text))
+                .thenReturn(TelegramIntent.search("я работал офис работа", Set.of(), Set.of(), SearchPeriod.TODAY));
+        when(inboxItemSearchService.search("я работал офис работа", Set.of(), Set.of(), SearchPeriod.TODAY, 10))
+                .thenReturn(List.of(memoryResponse("Встреча в офисе на Петроградской")));
+
+        service.poll();
+
+        verify(aiTelegramIntentDetector).detect(text);
+        verify(inboxItemSearchService).search("я работал офис работа", Set.of(), Set.of(), SearchPeriod.TODAY, 10);
+        verify(inboxItemService, never()).create(any(CreateInboxItemRequest.class));
     }
 
     @Test

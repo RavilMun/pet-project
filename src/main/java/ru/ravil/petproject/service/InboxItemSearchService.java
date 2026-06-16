@@ -5,10 +5,13 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
@@ -20,6 +23,7 @@ import ru.ravil.petproject.ai.EmbeddingResult;
 import ru.ravil.petproject.domain.InboxItemType;
 import ru.ravil.petproject.domain.MemorySlot;
 import ru.ravil.petproject.domain.MemoryUnit;
+import ru.ravil.petproject.domain.MemoryUnitType;
 import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.repository.MemoryUnitRepository;
 
@@ -31,6 +35,7 @@ public class InboxItemSearchService {
     private static final int VECTOR_RANK_BONUS = 40;
     private static final int VECTOR_RANK_PENALTY = 4;
     private static final int MIN_RELEVANCE_SCORE = 15;
+    private static final int WEAK_LEXICAL_SCORE = 50;
     private static final Set<String> RELAXED_QUERY_STOP_WORDS = Set.of(
             "а", "и", "или", "но", "что", "кто", "где", "когда", "как", "какой", "какая", "какие", "какое", "какую",
             "я", "мне", "меня", "мой", "моя", "мои", "у", "для", "про", "по", "из", "с", "со", "в", "во", "на", "к", "ко",
@@ -164,7 +169,7 @@ public class InboxItemSearchService {
         lexicalCandidates = lexicalCandidates.stream()
                 .sorted(searchComparator(normalizedQuery, normalizedTypes, normalizedTags))
                 .toList();
-        List<MemoryUnit> vectorCandidates = shouldExpandWithVectorCandidates(lexicalCandidates, normalizedTypes)
+        List<MemoryUnit> vectorCandidates = shouldExpandWithVectorCandidates(normalizedQuery, lexicalCandidates, normalizedTypes, dateRange)
                 ? vectorCandidates(
                         normalizedQuery,
                         normalizedTypes,
@@ -178,7 +183,8 @@ public class InboxItemSearchService {
                 vectorCandidates,
                 normalizedQuery,
                 normalizedTypes,
-                normalizedTags
+                normalizedTags,
+                dateRange
         );
         return rankedCandidates.stream()
                 .limit(normalizedLimit)
@@ -237,7 +243,7 @@ public class InboxItemSearchService {
             DateRange dateRange,
             int limit
     ) {
-        if (!shouldUseVectorSearch(query, itemTypes)) {
+        if (!shouldUseVectorSearch(query, itemTypes, dateRange)) {
             return List.of();
         }
 
@@ -277,16 +283,21 @@ public class InboxItemSearchService {
                 );
     }
 
-    private boolean shouldUseVectorSearch(String query, Set<String> itemTypes) {
+    private boolean shouldUseVectorSearch(String query, Set<String> itemTypes, DateRange dateRange) {
         if (!StringUtils.hasText(query)) {
             return false;
         }
         List<String> tokens = contentTokens(query);
-        return !itemTypes.isEmpty() || tokens.size() >= 2;
+        return !itemTypes.isEmpty() || tokens.size() >= 2 || (dateRange.hasBounds() && tokens.size() == 1);
     }
 
-    private boolean shouldExpandWithVectorCandidates(List<MemoryUnit> lexicalCandidates, Set<String> itemTypes) {
-        return lexicalCandidates.isEmpty() || !itemTypes.isEmpty();
+    private boolean shouldExpandWithVectorCandidates(
+            String query,
+            List<MemoryUnit> lexicalCandidates,
+            Set<String> itemTypes,
+            DateRange dateRange
+    ) {
+        return shouldUseVectorSearch(query, itemTypes, dateRange);
     }
 
     private List<MemoryUnit> rankCandidates(
@@ -294,10 +305,11 @@ public class InboxItemSearchService {
             List<MemoryUnit> vectorCandidates,
             String query,
             Set<String> itemTypes,
-            Set<String> tags
+            Set<String> tags,
+            DateRange dateRange
     ) {
-        List<MemoryUnit> ranked = new ArrayList<>(lexicalCandidates.size() + vectorCandidates.size());
-        Set<java.util.UUID> seen = new LinkedHashSet<>();
+        Map<UUID, ScoredMemoryUnit> scoredCandidates = new LinkedHashMap<>();
+        List<String> queryTokens = contentTokens(query);
         List<ScoredMemoryUnit> scoredLexicalCandidates = lexicalCandidates.stream()
                 .map(unit -> new ScoredMemoryUnit(unit, score(unit, query, itemTypes, tags)))
                 .toList();
@@ -312,26 +324,52 @@ public class InboxItemSearchService {
             if (candidate.score() < lexicalCutoff) {
                 continue;
             }
-            if (seen.add(unit.getId())) {
-                ranked.add(unit);
+            if (isImplicitQuestionMemory(unit, itemTypes)) {
+                continue;
             }
+            if (!hasRequiredAnchorMatch(unit, queryTokens, itemTypes, tags, false, dateRange, topLexicalScore, candidate.score())) {
+                continue;
+            }
+            addScoredCandidate(scoredCandidates, unit, candidate.score());
         }
 
         for (int index = 0; index < vectorCandidates.size(); index++) {
             MemoryUnit unit = vectorCandidates.get(index);
             int vectorScore = Math.max(0, VECTOR_RANK_BONUS - (index * VECTOR_RANK_PENALTY));
-            int combinedScore = score(unit, query, itemTypes, tags) + vectorScore;
-            if (seen.contains(unit.getId())) {
+            int baseScore = score(unit, query, itemTypes, tags);
+            if (topLexicalScore <= 0 && itemTypes.isEmpty() && tags.isEmpty() && baseScore < MIN_RELEVANCE_SCORE && !dateRange.hasBounds()) {
                 continue;
             }
+            if (isImplicitQuestionMemory(unit, itemTypes)) {
+                continue;
+            }
+            if (!hasRequiredAnchorMatch(unit, queryTokens, itemTypes, tags, true, dateRange, topLexicalScore, baseScore)) {
+                continue;
+            }
+            int combinedScore = baseScore + vectorScore;
             if (combinedScore < vectorRelevanceCutoff(topLexicalScore)) {
                 continue;
             }
-            seen.add(unit.getId());
-            ranked.add(unit);
+            addScoredCandidate(scoredCandidates, unit, combinedScore);
         }
 
-        return List.copyOf(ranked);
+        return scoredCandidates.values().stream()
+                .sorted(Comparator
+                        .comparingInt(ScoredMemoryUnit::score)
+                        .reversed()
+                        .thenComparing(
+                                candidate -> sourceCreatedAt(candidate.unit()),
+                                Comparator.nullsLast(Comparator.reverseOrder())
+                        ))
+                .map(ScoredMemoryUnit::unit)
+                .toList();
+    }
+
+    private void addScoredCandidate(Map<UUID, ScoredMemoryUnit> scoredCandidates, MemoryUnit unit, int score) {
+        ScoredMemoryUnit existing = scoredCandidates.get(unit.getId());
+        if (existing == null || score > existing.score()) {
+            scoredCandidates.put(unit.getId(), new ScoredMemoryUnit(unit, score));
+        }
     }
 
     private int lexicalRelevanceCutoff(String query, int topLexicalScore) {
@@ -396,6 +434,75 @@ public class InboxItemSearchService {
         }
 
         return score;
+    }
+
+    private boolean isImplicitQuestionMemory(MemoryUnit unit, Set<String> itemTypes) {
+        return unit.getType() == MemoryUnitType.QUESTION && !itemTypes.contains(MemoryUnitType.QUESTION.name());
+    }
+
+    private boolean hasRequiredAnchorMatch(
+            MemoryUnit unit,
+            List<String> queryTokens,
+            Set<String> itemTypes,
+            Set<String> tags,
+            boolean vectorCandidate,
+            DateRange dateRange,
+            int topLexicalScore,
+            int baseScore
+    ) {
+        if (queryTokens.isEmpty() || !itemTypes.isEmpty() || !tags.isEmpty()) {
+            return true;
+        }
+        if (vectorCandidate && dateRange.hasBounds() && topLexicalScore < WEAK_LEXICAL_SCORE && baseScore == 0) {
+            return true;
+        }
+
+        return queryTokens.stream().anyMatch(token -> anchorMatchesHighSignalValue(token, unit.getTitle())
+                || anchorMatchesHighSignalValue(token, unit.getSourceQuote())
+                || anchorMatchesTags(token, unit.getTags())
+                || anchorMatchesSlots(token, unit.getSlots()));
+    }
+
+    private boolean anchorMatchesHighSignalValue(String anchorToken, String value) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        String normalizedValue = normalizeText(value);
+        if (normalizedValue.contains(anchorToken)) {
+            return true;
+        }
+        return contentTokens(normalizedValue).stream()
+                .anyMatch(fieldToken -> anchorMatchesToken(anchorToken, fieldToken));
+    }
+
+    private boolean anchorMatchesTags(String anchorToken, Set<String> tags) {
+        return normalizeTags(tags).stream()
+                .anyMatch(tag -> anchorMatchesHighSignalValue(anchorToken, tag));
+    }
+
+    private boolean anchorMatchesSlots(String anchorToken, Set<MemorySlot> slots) {
+        if (slots == null || slots.isEmpty()) {
+            return false;
+        }
+        return slots.stream()
+                .anyMatch(slot -> anchorMatchesHighSignalValue(anchorToken, slot.getValue())
+                        || anchorMatchesHighSignalValue(anchorToken, slot.getNormalizedValue()));
+    }
+
+    private boolean anchorMatchesToken(String queryToken, String fieldToken) {
+        if (queryToken.equals(fieldToken)) {
+            return true;
+        }
+        if (queryToken.length() >= 4 && (fieldToken.contains(queryToken) || queryToken.contains(fieldToken))) {
+            return true;
+        }
+
+        int commonPrefixLength = commonPrefixLength(queryToken, fieldToken);
+        int minLength = Math.min(queryToken.length(), fieldToken.length());
+        if (minLength >= 5 && commonPrefixLength >= 4) {
+            return true;
+        }
+        return queryToken.length() == fieldToken.length() && minLength == 4 && commonPrefixLength >= 3;
     }
 
     private int slotScore(Set<MemorySlot> slots, String normalizedQuery, List<String> queryTokens) {

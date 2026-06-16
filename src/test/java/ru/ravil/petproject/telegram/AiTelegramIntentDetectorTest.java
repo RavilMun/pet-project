@@ -73,6 +73,24 @@ class AiTelegramIntentDetectorTest {
     }
 
     @Test
+    void parsesWhoQuestionAsSearchIntent() {
+        when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
+        when(openAiClient.classify(anyString(), anyString())).thenReturn("""
+                {
+                  "intent": "SEARCH",
+                  "query": "дубовская",
+                  "tags": [],
+                  "period": "ALL"
+                }
+                """);
+
+        TelegramIntent intent = detector.detect("Кто такая Дубовская?");
+
+        assertThat(intent.type()).isEqualTo(TelegramIntentType.SEARCH);
+        assertThat(intent.query()).isEqualTo("дубовская");
+    }
+
+    @Test
     void parsesCaptureIntent() {
         when(openAiClientProvider.getIfAvailable()).thenReturn(openAiClient);
         when(openAiClient.classify(anyString(), anyString())).thenReturn("""

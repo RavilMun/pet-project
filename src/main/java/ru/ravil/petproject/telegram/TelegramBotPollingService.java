@@ -169,6 +169,13 @@ public class TelegramBotPollingService {
     }
 
     private TelegramIntent detectHybridSafeIntent(String text) {
+        if (aiTelegramIntentDetector.shouldUseAiForIntent(text)) {
+            TelegramIntent aiIntent = aiTelegramIntentDetector.detect(text);
+            if (!aiIntent.isUnknown()) {
+                return aiIntent;
+            }
+        }
+
         TelegramIntent intent = ruleBasedTelegramIntentDetector.detect(text);
         if (intent.isUnknown()) {
             intent = aiTelegramIntentDetector.detect(text);

@@ -62,6 +62,9 @@ public class MemoryAnswerService {
             - If the question asks where, use PLACE or ORGANIZATION slots when present.
             - If the question asks when, use TIME slots, occurredAt, or dueAt when present.
             - If no explicit time exists but sourceCreatedAt exists, phrase it as "по записи от <date>".
+            - For first-person questions containing "I", "me", "my", "я", "мне", "меня", or "мой/моя/мои",
+              prefer memories whose ACTOR/SUBJECT is the user or whose source text describes the user's own action.
+              Do not answer from memories about another named person unless the question names that person.
             - If the question asks what someone/something likes, wants, bought, visited, learned, or planned,
               use matching SUBJECT/ACTION/OBJECT slots or equivalent title/summary/source text.
             - If multiple memories answer the question, summarize them compactly and include all relevant source indexes.
