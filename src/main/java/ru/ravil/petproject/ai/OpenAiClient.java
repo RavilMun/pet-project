@@ -3,12 +3,24 @@ package ru.ravil.petproject.ai;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 public class OpenAiClient {
+
+    private static final Logger log = LoggerFactory.getLogger(OpenAiClient.class);
+    private static final int MAX_ATTEMPTS = 3;
+    private static final long BASE_BACKOFF_MS = 500L;
+    private static final long MAX_BACKOFF_MS = 8_000L;
 
     private final RestClient restClient;
     private final String model;
@@ -41,11 +53,11 @@ public class OpenAiClient {
                 0.1
         );
 
-        OpenAiChatCompletionResponse response = restClient.post()
+        OpenAiChatCompletionResponse response = executeWithRetry("chat.completions", () -> restClient.post()
                 .uri("/chat/completions")
                 .body(request)
                 .retrieve()
-                .body(OpenAiChatCompletionResponse.class);
+                .body(OpenAiChatCompletionResponse.class));
 
         if (response == null || response.choices() == null || response.choices().isEmpty()) {
             throw new IllegalStateException("OpenAI response has no choices");
@@ -62,11 +74,11 @@ public class OpenAiClient {
     public List<Double> embed(String input) {
         OpenAiEmbeddingRequest request = new OpenAiEmbeddingRequest(embeddingModel, input);
 
-        OpenAiEmbeddingResponse response = restClient.post()
+        OpenAiEmbeddingResponse response = executeWithRetry("embeddings", () -> restClient.post()
                 .uri("/embeddings")
                 .body(request)
                 .retrieve()
-                .body(OpenAiEmbeddingResponse.class);
+                .body(OpenAiEmbeddingResponse.class));
 
         if (response == null || response.data() == null || response.data().isEmpty()) {
             throw new IllegalStateException("OpenAI embedding response has no data");
@@ -82,5 +94,68 @@ public class OpenAiClient {
 
     public String embeddingModel() {
         return embeddingModel;
+    }
+
+    private <T> T executeWithRetry(String operation, Supplier<T> call) {
+        RuntimeException lastException = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                return call.get();
+            } catch (RestClientResponseException exception) {
+                lastException = exception;
+                int status = exception.getStatusCode().value();
+                if (!isRetryableStatus(status) || attempt == MAX_ATTEMPTS) {
+                    throw exception;
+                }
+                long delay = retryAfterMillis(exception).orElse(backoffMillis(attempt));
+                log.warn("OpenAI {} failed with HTTP {} (attempt {}/{}), retrying in {} ms",
+                        operation, status, attempt, MAX_ATTEMPTS, delay);
+                sleep(delay);
+            } catch (ResourceAccessException exception) {
+                lastException = exception;
+                if (attempt == MAX_ATTEMPTS) {
+                    throw exception;
+                }
+                long delay = backoffMillis(attempt);
+                log.warn("OpenAI {} I/O error '{}' (attempt {}/{}), retrying in {} ms",
+                        operation, exception.getMessage(), attempt, MAX_ATTEMPTS, delay);
+                sleep(delay);
+            }
+        }
+        throw lastException;
+    }
+
+    static boolean isRetryableStatus(int status) {
+        return status == 429 || (status >= 500 && status < 600);
+    }
+
+    static long backoffMillis(int attempt) {
+        long exponential = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * (1L << Math.max(0, attempt - 1)));
+        long jitter = ThreadLocalRandom.current().nextLong(0, 250);
+        return exponential + jitter;
+    }
+
+    private static Optional<Long> retryAfterMillis(RestClientResponseException exception) {
+        String header = exception.getResponseHeaders() == null
+                ? null
+                : exception.getResponseHeaders().getFirst("Retry-After");
+        if (header == null || header.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            long seconds = Long.parseLong(header.trim());
+            return seconds < 0 ? Optional.empty() : Optional.of(Math.min(MAX_BACKOFF_MS, seconds * 1000L));
+        } catch (NumberFormatException exception2) {
+            return Optional.empty();
+        }
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while backing off before OpenAI retry", exception);
+        }
     }
 }

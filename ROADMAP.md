@@ -35,7 +35,7 @@
 - [x] **1.2** Async-обработка ИИ-шагов (зависит от 1.1) — **сделано**:
   - [x] **1.2a** `@EnableAsync` + `InboxItemService.captureAsync` (сохраняет сырьё, возвращает `PENDING_AI`-снимок сразу, обработка в фоне через `@Async scheduleProcessing`). Telegram-капча → мгновенный «Сохранил, разберу позже», мёртвый catch убран. REST `create` оставлен синхронным.
   - [x] **1.2b** `InboxItemRetryScheduler` (`@Scheduled`, загейчен `inbox.processing.retry.enabled`, off в eval): авто-ретрай `FAILED_AI` с экспоненциальным backoff по `next_attempt_at`, cap `MAX_PROCESSING_ATTEMPTS=6` (дальше — только ручной `reprocess`). Весь тест-набор зелёный + юнит-тесты на backoff/due.
-- [ ] **1.3** Устойчивость OpenAI: retry+backoff на 429/5xx, таймауты, лог причины.
+- [x] **1.3** Устойчивость OpenAI — **сделано**: `OpenAiClient` оборачивает chat/embeddings в retry (до 3 попыток) с экспоненциальным backoff + jitter на 429/5xx и I/O-ошибки, уважает `Retry-After`, логирует причину; не ретраит 4xx (кроме 429). Таймауты (connect 10s / read 60s) сохранены. Юнит-тесты на `isRetryableStatus`/`backoffMillis`.
 
 ## Фаза 2 — Замкнуть петлю напоминаний (M) — *данные уже есть, фича не работает*
 
