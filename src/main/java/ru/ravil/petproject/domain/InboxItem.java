@@ -99,6 +99,15 @@ public class InboxItem {
     @Column(name = "processed_at")
     private OffsetDateTime processedAt;
 
+    @Column(name = "processing_attempts", nullable = false)
+    private int processingAttempts;
+
+    @Column(name = "last_processing_error", columnDefinition = "text")
+    private String lastProcessingError;
+
+    @Column(name = "next_attempt_at")
+    private OffsetDateTime nextAttemptAt;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -143,6 +152,10 @@ public class InboxItem {
         }
         memoryUnit.setItem(this);
         this.memoryUnits.add(memoryUnit);
+    }
+
+    public void clearMemoryUnits() {
+        this.memoryUnits.clear();
     }
 
     private void refreshSearchText() {

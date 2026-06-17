@@ -104,4 +104,9 @@ public class InboxItemController {
     ) {
         return inboxItemService.update(id, request);
     }
+
+    @PostMapping("/{id}/reprocess")
+    public InboxItemResponse reprocess(@PathVariable UUID id) {
+        return inboxItemService.reprocess(id);
+    }
 }

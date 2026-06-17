@@ -8,7 +8,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +41,13 @@ import ru.ravil.petproject.repository.MemoryUnitRepository;
 @Service
 public class InboxItemService {
 
+    private static final Logger log = LoggerFactory.getLogger(InboxItemService.class);
+    private static final int MAX_REPROCESS_LIMIT = 100;
+    private static final int MAX_ERROR_LENGTH = 1000;
+    private static final int MAX_PROCESSING_ATTEMPTS = 6;
+    private static final long RETRY_BASE_MINUTES = 1L;
+    private static final long RETRY_MAX_MINUTES = 30L;
+
     private final InboxItemRepository inboxItemRepository;
     private final InboxItemMapper inboxItemMapper;
     private final LinkExtractor linkExtractor;
@@ -45,6 +55,7 @@ public class InboxItemService {
     private final AiMemoryUnitExtractionService aiMemoryUnitExtractionService;
     private final ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
     private final MemoryUnitRepository memoryUnitRepository;
+    private final ObjectProvider<InboxItemService> selfProvider;
 
     public InboxItemService(
             InboxItemRepository inboxItemRepository,
@@ -53,7 +64,8 @@ public class InboxItemService {
             LinkExtractor linkExtractor,
             AiClassificationService aiClassificationService,
             AiMemoryUnitExtractionService aiMemoryUnitExtractionService,
-            ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider
+            ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider,
+            ObjectProvider<InboxItemService> selfProvider
     ) {
         this.inboxItemRepository = inboxItemRepository;
         this.memoryUnitRepository = memoryUnitRepository;
@@ -62,29 +74,110 @@ public class InboxItemService {
         this.aiClassificationService = aiClassificationService;
         this.aiMemoryUnitExtractionService = aiMemoryUnitExtractionService;
         this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
+        this.selfProvider = selfProvider;
+    }
+
+    /**
+     * Degraded-save capture: the raw {@link InboxItem} is persisted in its own committed transaction
+     * (with a minimal lexically-searchable fallback {@link MemoryUnit}) before any AI runs, so a capture
+     * is never lost when OpenAI is unavailable. AI enrichment then runs in a separate transaction via
+     * {@link #process(UUID, CreateInboxItemRequest)} and degrades to {@code FAILED_AI} on failure instead
+     * of rolling back the capture.
+     */
+    public InboxItemResponse create(CreateInboxItemRequest request) {
+        List<ExtractedLink> links = linkExtractor.extract(request.rawText());
+        InboxItem rawItem = buildRawItem(request, links);
+        InboxItem savedRaw = inboxItemRepository.save(rawItem);
+        return selfProvider.getObject().process(savedRaw.getId(), request);
     }
 
     @Transactional
-    public InboxItemResponse create(CreateInboxItemRequest request) {
-        List<ExtractedLink> links = linkExtractor.extract(request.rawText());
-        AiClassificationResult classification = aiClassificationService.classify(request.rawText())
-                .orElseThrow(AiProcessingUnavailableException::new);
-        InboxItem item = new InboxItem(request.rawText(), valueOrDefault(request.source(), InboxItemSource.MANUAL));
-        item.setTitle(request.title());
-        item.setSummary(request.summary());
-        item.setType(resolveType(request.type(), links));
-        item.setPriority(valueOrDefault(request.priority(), InboxItemPriority.MEDIUM));
-        item.setActionable(Boolean.TRUE.equals(request.actionable()));
-        item.setTelegramChatId(request.telegramChatId());
-        item.setTelegramMessageId(request.telegramMessageId());
-        item.setTags(resolveTags(request.tags(), links));
-        links.forEach(link -> item.addLink(link.url(), link.domain()));
-        applyClassification(item, request, classification, links);
-        applyMemoryUnits(item, classification);
+    public InboxItemResponse process(UUID id, CreateInboxItemRequest request) {
+        InboxItem item = findById(id);
+        item.setProcessingAttempts(item.getProcessingAttempts() + 1);
+        try {
+            AiClassificationResult classification = aiClassificationService.classify(item.getRawText())
+                    .orElseThrow(AiProcessingUnavailableException::new);
+            List<ExtractedLink> links = linkExtractor.extract(item.getRawText());
+            applyClassification(item, request, classification, links);
+            rebuildMemoryUnits(item, classification);
+            item.setLastProcessingError(null);
+            item.setNextAttemptAt(null);
+            InboxItem savedItem = inboxItemRepository.save(item);
+            updateMemoryUnitEmbeddingsIfAvailable(savedItem);
+            return inboxItemMapper.toResponse(savedItem);
+        } catch (RuntimeException exception) {
+            item.setStatus(InboxItemStatus.FAILED_AI);
+            item.setLastProcessingError(truncateError(exception.getMessage()));
+            item.setNextAttemptAt(nextAttemptAt(item.getProcessingAttempts()));
+            InboxItem savedItem = inboxItemRepository.save(item);
+            log.warn("AI processing failed for inbox item {} (attempt {}): {}",
+                    id, item.getProcessingAttempts(), exception.getMessage());
+            return inboxItemMapper.toResponse(savedItem);
+        }
+    }
 
-        InboxItem savedItem = inboxItemRepository.save(item);
-        updateMemoryUnitEmbeddingsIfAvailable(savedItem);
-        return inboxItemMapper.toResponse(savedItem);
+    /**
+     * Fire-and-forget capture: persists the raw item and returns the {@code PENDING_AI} snapshot
+     * immediately, running AI enrichment on a background thread. Used by the Telegram bot so the
+     * user gets an instant acknowledgement instead of waiting for OpenAI.
+     */
+    public InboxItemResponse captureAsync(CreateInboxItemRequest request) {
+        List<ExtractedLink> links = linkExtractor.extract(request.rawText());
+        InboxItem rawItem = buildRawItem(request, links);
+        InboxItem savedRaw = inboxItemRepository.save(rawItem);
+        InboxItemResponse snapshot = inboxItemMapper.toResponse(savedRaw);
+        selfProvider.getObject().scheduleProcessing(savedRaw.getId(), request);
+        return snapshot;
+    }
+
+    @Async
+    public void scheduleProcessing(UUID id, CreateInboxItemRequest request) {
+        try {
+            selfProvider.getObject().process(id, request);
+        } catch (RuntimeException exception) {
+            log.warn("Async inbox processing failed for {}: {}", id, exception.getMessage());
+        }
+    }
+
+    public InboxItemResponse reprocess(UUID id) {
+        return selfProvider.getObject().process(id, null);
+    }
+
+    /**
+     * Scheduled retry sweep: reprocesses FAILED_AI items whose backoff window
+     * ({@code next_attempt_at}) has elapsed. Items that exhausted MAX_PROCESSING_ATTEMPTS
+     * have {@code next_attempt_at = null} and are skipped (manual {@link #reprocess} only).
+     */
+    public int reprocessDue(int limit) {
+        List<InboxItem> due = inboxItemRepository.findByStatusInAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAsc(
+                List.of(InboxItemStatus.FAILED_AI),
+                OffsetDateTime.now(),
+                PageRequest.of(0, normalizeReprocessLimit(limit))
+        );
+        int processed = 0;
+        for (InboxItem item : due) {
+            InboxItemResponse response = selfProvider.getObject().process(item.getId(), null);
+            if (response.status() == InboxItemStatus.PROCESSED) {
+                processed++;
+            }
+        }
+        return processed;
+    }
+
+    public int reprocessPending(int limit) {
+        List<InboxItem> pending = inboxItemRepository.findByStatusInOrderByCreatedAtAsc(
+                List.of(InboxItemStatus.PENDING_AI, InboxItemStatus.FAILED_AI),
+                PageRequest.of(0, normalizeReprocessLimit(limit))
+        );
+        int processed = 0;
+        for (InboxItem item : pending) {
+            InboxItemResponse response = selfProvider.getObject().process(item.getId(), null);
+            if (response.status() == InboxItemStatus.PROCESSED) {
+                processed++;
+            }
+        }
+        return processed;
     }
 
     @Transactional(readOnly = true)
@@ -187,25 +280,60 @@ public class InboxItemService {
         return tags;
     }
 
+    private InboxItem buildRawItem(CreateInboxItemRequest request, List<ExtractedLink> links) {
+        InboxItem item = new InboxItem(request.rawText(), valueOrDefault(request.source(), InboxItemSource.MANUAL));
+        item.setTitle(request.title());
+        item.setSummary(request.summary());
+        item.setType(resolveType(request.type(), links));
+        item.setPriority(valueOrDefault(request.priority(), InboxItemPriority.MEDIUM));
+        item.setActionable(Boolean.TRUE.equals(request.actionable()));
+        item.setTelegramChatId(request.telegramChatId());
+        item.setTelegramMessageId(request.telegramMessageId());
+        item.setTags(resolveTags(request.tags(), links));
+        links.forEach(link -> item.addLink(link.url(), link.domain()));
+        item.setStatus(InboxItemStatus.PENDING_AI);
+        item.addMemoryUnit(rawFallbackMemoryUnit(item));
+        return item;
+    }
+
+    private MemoryUnit rawFallbackMemoryUnit(InboxItem item) {
+        String title = StringUtils.hasText(item.getTitle()) ? item.getTitle() : item.getRawText();
+        MemoryUnit unit = new MemoryUnit(item, toMemoryUnitType(item.getType()), title);
+        unit.setSummary(item.getSummary());
+        unit.setSourceQuote(item.getRawText());
+        unit.setActionable(item.isActionable());
+        unit.setConfidence(0.3d);
+        unit.setTags(item.getTags());
+        unit.setAiMetadata(Map.of(
+                "provider", "none",
+                "extractor", "raw-capture-fallback"
+        ));
+        return unit;
+    }
+
     private void applyClassification(
             InboxItem item,
             CreateInboxItemRequest request,
             AiClassificationResult result,
             List<ExtractedLink> links
     ) {
-        if (!StringUtils.hasText(request.title()) && StringUtils.hasText(result.title())) {
+        InboxItemType requestedType = request == null ? null : request.type();
+        InboxItemPriority requestedPriority = request == null ? null : request.priority();
+        Boolean requestedActionable = request == null ? null : request.actionable();
+
+        if (!StringUtils.hasText(item.getTitle()) && StringUtils.hasText(result.title())) {
             item.setTitle(result.title());
         }
-        if (!StringUtils.hasText(request.summary()) && StringUtils.hasText(result.summary())) {
+        if (!StringUtils.hasText(item.getSummary()) && StringUtils.hasText(result.summary())) {
             item.setSummary(result.summary());
         }
-        if (request.type() == null) {
+        if (requestedType == null) {
             item.setType(resolveAiType(result.type(), links));
         }
-        if (request.priority() == null) {
+        if (requestedPriority == null) {
             item.setPriority(result.priority());
         }
-        if (request.actionable() == null) {
+        if (requestedActionable == null) {
             item.setActionable(result.actionable());
         }
 
@@ -218,6 +346,11 @@ public class InboxItemService {
         ));
         item.setStatus(InboxItemStatus.PROCESSED);
         item.setProcessedAt(OffsetDateTime.now());
+    }
+
+    private void rebuildMemoryUnits(InboxItem item, AiClassificationResult classification) {
+        item.clearMemoryUnits();
+        applyMemoryUnits(item, classification);
     }
 
     private void applyMemoryUnits(InboxItem item, AiClassificationResult classification) {
@@ -304,6 +437,28 @@ public class InboxItemService {
 
     private static <T> T valueOrDefault(T value, T defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    private static String truncateError(String message) {
+        if (message == null) {
+            return null;
+        }
+        return message.length() <= MAX_ERROR_LENGTH ? message : message.substring(0, MAX_ERROR_LENGTH);
+    }
+
+    private static int normalizeReprocessLimit(int limit) {
+        if (limit < 1) {
+            return MAX_REPROCESS_LIMIT;
+        }
+        return Math.min(limit, MAX_REPROCESS_LIMIT);
+    }
+
+    private static OffsetDateTime nextAttemptAt(int attempts) {
+        if (attempts >= MAX_PROCESSING_ATTEMPTS) {
+            return null;
+        }
+        long minutes = Math.min(RETRY_MAX_MINUTES, RETRY_BASE_MINUTES * (1L << Math.max(0, attempts - 1)));
+        return OffsetDateTime.now().plusMinutes(minutes);
     }
 
     private void updateMemoryUnitEmbeddingsIfAvailable(InboxItem item) {

@@ -526,3 +526,31 @@ databaseChangeLog:
               create index idx_memory_slots_normalized_value_fts
               on memory_slots
               using gin (to_tsvector('simple', coalesce(normalized_value, '')))
+
+  - changeSet:
+      id: 010-add-inbox-item-processing-state
+      author: codex
+      changes:
+        - addColumn:
+            tableName: inbox_items
+            columns:
+              - column:
+                  name: processing_attempts
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_processing_error
+                  type: text
+              - column:
+                  name: next_attempt_at
+                  type: timestamp with time zone
+        - createIndex:
+            tableName: inbox_items
+            indexName: idx_inbox_items_status_next_attempt
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: next_attempt_at
