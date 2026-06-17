@@ -3,8 +3,8 @@ package ru.ravil.petproject.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -69,7 +70,12 @@ class InboxItemServiceTest {
     @Mock
     private AiEmbeddingService aiEmbeddingService;
 
+    @Mock
+    private ObjectProvider<InboxItemService> selfProvider;
+
     private InboxItemService inboxItemService;
+
+    private final AtomicReference<InboxItem> lastSaved = new AtomicReference<>();
 
     @BeforeEach
     void setUp() {
@@ -82,8 +88,18 @@ class InboxItemServiceTest {
                 new LinkExtractor(),
                 aiClassificationService,
                 aiMemoryUnitExtractionService,
-                aiEmbeddingServiceProvider
+                aiEmbeddingServiceProvider,
+                selfProvider
         );
+        lenient().when(selfProvider.getObject()).thenReturn(inboxItemService);
+        // Degraded-save flow persists twice (raw capture + AI processing) and reloads the raw item by id.
+        lenient().when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
+            InboxItem item = invocation.getArgument(0);
+            persistGraph(item);
+            lastSaved.set(item);
+            return item;
+        });
+        lenient().when(inboxItemRepository.findById(any())).thenAnswer(invocation -> Optional.ofNullable(lastSaved.get()));
     }
 
     @Test
@@ -103,13 +119,7 @@ class InboxItemServiceTest {
         when(aiClassificationService.classify("remember spring ai docs"))
                 .thenReturn(Optional.of(classification(null, null, InboxItemType.NOTE, Set.of(), InboxItemPriority.MEDIUM, false)));
 
-        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
-            InboxItem item = invocation.getArgument(0);
-            persistGraph(item);
-            return item;
-        });
-
-        InboxItemResponse response = inboxItemService.create(request);
+InboxItemResponse response = inboxItemService.create(request);
 
         assertThat(response.id()).isNotNull();
         assertThat(response.rawText()).isEqualTo("remember spring ai docs");
@@ -124,7 +134,7 @@ class InboxItemServiceTest {
         assertThat(response.processedAt()).isNotNull();
 
         ArgumentCaptor<InboxItem> captor = ArgumentCaptor.forClass(InboxItem.class);
-        verify(inboxItemRepository).save(captor.capture());
+        verify(inboxItemRepository, atLeastOnce()).save(captor.capture());
         assertThat(captor.getValue().getSource()).isEqualTo(InboxItemSource.MANUAL);
         assertThat(captor.getValue().getSearchText()).contains("remember spring ai docs", "NOTE");
         assertThat(captor.getValue().getMemoryUnits()).hasSize(1);
@@ -150,13 +160,7 @@ class InboxItemServiceTest {
         when(aiClassificationService.classify("find chair under 25k"))
                 .thenReturn(Optional.of(classification(null, null, InboxItemType.OTHER, Set.of(), InboxItemPriority.LOW, false)));
 
-        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
-            InboxItem item = invocation.getArgument(0);
-            persistGraph(item);
-            return item;
-        });
-
-        InboxItemResponse response = inboxItemService.create(request);
+InboxItemResponse response = inboxItemService.create(request);
 
         assertThat(response.title()).isEqualTo("Find a chair");
         assertThat(response.summary()).isEqualTo("Research ergonomic chairs");
@@ -185,13 +189,7 @@ class InboxItemServiceTest {
         when(aiClassificationService.classify("read https://www.example.com/docs."))
                 .thenReturn(Optional.of(classification(null, null, InboxItemType.OTHER, Set.of(), InboxItemPriority.MEDIUM, false)));
 
-        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
-            InboxItem item = invocation.getArgument(0);
-            persistGraph(item);
-            return item;
-        });
-
-        InboxItemResponse response = inboxItemService.create(request);
+InboxItemResponse response = inboxItemService.create(request);
 
         assertThat(response.type()).isEqualTo(InboxItemType.LINK);
         assertThat(response.tags()).containsExactlyInAnyOrder("telegram", "link", "example.com");
@@ -217,13 +215,7 @@ class InboxItemServiceTest {
         when(aiClassificationService.classify("project idea https://example.com"))
                 .thenReturn(Optional.of(classification(null, null, InboxItemType.OTHER, Set.of(), InboxItemPriority.MEDIUM, false)));
 
-        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
-            InboxItem item = invocation.getArgument(0);
-            persistGraph(item);
-            return item;
-        });
-
-        InboxItemResponse response = inboxItemService.create(request);
+InboxItemResponse response = inboxItemService.create(request);
 
         assertThat(response.type()).isEqualTo(InboxItemType.IDEA);
         assertThat(response.tags()).containsExactlyInAnyOrder("link", "example.com");
@@ -255,13 +247,7 @@ class InboxItemServiceTest {
 
         when(aiClassificationService.classify("need to choose a chair under 25k"))
                 .thenReturn(Optional.of(classification));
-        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
-            InboxItem item = invocation.getArgument(0);
-            persistGraph(item);
-            return item;
-        });
-
-        InboxItemResponse response = inboxItemService.create(request);
+InboxItemResponse response = inboxItemService.create(request);
 
         assertThat(response.title()).isEqualTo("Choose a chair under 25k");
         assertThat(response.summary()).isEqualTo("Research ergonomic chairs within a 25k budget.");
@@ -273,7 +259,7 @@ class InboxItemServiceTest {
         assertThat(response.processedAt()).isNotNull();
 
         ArgumentCaptor<InboxItem> captor = ArgumentCaptor.forClass(InboxItem.class);
-        verify(inboxItemRepository).save(captor.capture());
+        verify(inboxItemRepository, atLeastOnce()).save(captor.capture());
         assertThat(captor.getValue().getAiMetadata()).containsEntry("provider", "openai");
         assertThat(captor.getValue().getAiMetadata()).containsEntry("classifier", "ai-classification-v1");
         assertThat(captor.getValue().getSearchText())
@@ -328,16 +314,10 @@ class InboxItemServiceTest {
                                 Map.of("places", List.of("Башня Святого Олафа"))
                         )
                 ))));
-        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
-            InboxItem item = invocation.getArgument(0);
-            persistGraph(item);
-            return item;
-        });
-
-        inboxItemService.create(request);
+inboxItemService.create(request);
 
         ArgumentCaptor<InboxItem> captor = ArgumentCaptor.forClass(InboxItem.class);
-        verify(inboxItemRepository).save(captor.capture());
+        verify(inboxItemRepository, atLeastOnce()).save(captor.capture());
         assertThat(captor.getValue().getMemoryUnits())
                 .extracting(MemoryUnit::getTitle)
                 .containsExactlyInAnyOrder("Поездка в Выборг", "Посещение башни Святого Олафа");
@@ -374,11 +354,6 @@ class InboxItemServiceTest {
         when(aiEmbeddingServiceProvider.getIfAvailable()).thenReturn(aiEmbeddingService);
         when(aiEmbeddingService.embed(org.mockito.ArgumentMatchers.contains("Посмотреть доклад про Kafka")))
                 .thenReturn(Optional.of(new EmbeddingResult("[0.1,0.2]", "test-embedding")));
-        when(inboxItemRepository.save(any(InboxItem.class))).thenAnswer(invocation -> {
-            InboxItem item = invocation.getArgument(0);
-            persistGraph(item);
-            return item;
-        });
         when(memoryUnitRepository.updateEmbedding(
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("[0.1,0.2]"),
@@ -398,7 +373,7 @@ class InboxItemServiceTest {
     }
 
     @Test
-    void createFailsWithoutAiClassification() {
+    void createSavesRawItemWhenAiClassificationUnavailable() {
         CreateInboxItemRequest request = new CreateInboxItemRequest(
                 "raw note",
                 null,
@@ -413,9 +388,18 @@ class InboxItemServiceTest {
         );
         when(aiClassificationService.classify("raw note")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> inboxItemService.create(request))
-                .isInstanceOf(AiProcessingUnavailableException.class);
-        verify(inboxItemRepository, never()).save(any(InboxItem.class));
+        InboxItemResponse response = inboxItemService.create(request);
+
+        assertThat(response.rawText()).isEqualTo("raw note");
+        assertThat(response.status()).isEqualTo(InboxItemStatus.FAILED_AI);
+
+        ArgumentCaptor<InboxItem> captor = ArgumentCaptor.forClass(InboxItem.class);
+        verify(inboxItemRepository, atLeastOnce()).save(captor.capture());
+        InboxItem saved = captor.getValue();
+        assertThat(saved.getProcessingAttempts()).isEqualTo(1);
+        assertThat(saved.getLastProcessingError()).isNotNull();
+        // Raw capture must remain lexically searchable via its fallback memory unit.
+        assertThat(saved.getMemoryUnits()).hasSize(1);
     }
 
     @Test

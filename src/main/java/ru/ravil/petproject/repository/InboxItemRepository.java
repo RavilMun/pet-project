@@ -1,6 +1,7 @@
 package ru.ravil.petproject.repository;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -13,10 +14,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 import ru.ravil.petproject.domain.InboxItem;
+import ru.ravil.petproject.domain.InboxItemStatus;
 
 public interface InboxItemRepository extends JpaRepository<InboxItem, UUID> {
 
     Page<InboxItem> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    List<InboxItem> findByStatusInOrderByCreatedAtAsc(Collection<InboxItemStatus> statuses, Pageable pageable);
 
     Optional<InboxItem> findFirstByTelegramChatIdOrderByCreatedAtDesc(Long telegramChatId);
 
