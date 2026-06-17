@@ -31,6 +31,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
               and unit.dueAt is not null
               and unit.dueAt <= :now
               and unit.remindedAt is null
+              and unit.completedAt is null
               and item.telegramChatId is not null
             order by unit.dueAt asc
             """)
@@ -44,6 +45,31 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
     @Transactional
     @Query("update MemoryUnit unit set unit.remindedAt = :remindedAt where unit.id = :id")
     int markReminded(@Param("id") UUID id, @Param("remindedAt") OffsetDateTime remindedAt);
+
+    @Query("""
+            select unit
+            from MemoryUnit unit
+            join fetch unit.item item
+            where unit.type in :types
+              and unit.completedAt is null
+              and item.telegramChatId = :chatId
+            order by case when unit.dueAt is null then 1 else 0 end, unit.dueAt asc, unit.createdAt asc
+            """)
+    List<MemoryUnit> findOpenTasks(
+            @Param("types") java.util.Collection<ru.ravil.petproject.domain.MemoryUnitType> types,
+            @Param("chatId") Long chatId,
+            Pageable pageable
+    );
+
+    @Modifying
+    @Transactional
+    @Query("update MemoryUnit unit set unit.completedAt = :completedAt where unit.id = :id and unit.completedAt is null")
+    int markCompleted(@Param("id") UUID id, @Param("completedAt") OffsetDateTime completedAt);
+
+    @Modifying
+    @Transactional
+    @Query("update MemoryUnit unit set unit.dueAt = :dueAt, unit.remindedAt = null where unit.id = :id")
+    int snoozeDueAt(@Param("id") UUID id, @Param("dueAt") OffsetDateTime dueAt);
 
     @Query("""
             select unit

@@ -1,9 +1,15 @@
 package ru.ravil.petproject.telegram;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,6 +29,8 @@ import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
 import ru.ravil.petproject.service.MemoryAnswerService;
+import ru.ravil.petproject.service.MemoryTaskService;
+import ru.ravil.petproject.service.OpenTask;
 
 @Service
 @ConditionalOnProperty(prefix = "telegram.bot", name = "enabled", havingValue = "true")
@@ -40,8 +48,10 @@ public class TelegramBotPollingService {
     private final TelegramSearchResponseFormatter searchResponseFormatter;
     private final InboxItemEmbeddingBackfillService embeddingBackfillService;
     private final MemoryAnswerService memoryAnswerService;
+    private final MemoryTaskService memoryTaskService;
     private final AtomicBoolean polling = new AtomicBoolean(false);
     private final AtomicLong nextOffset = new AtomicLong(0);
+    private final Map<Long, List<OpenTask>> lastListedTasks = new ConcurrentHashMap<>();
 
     public TelegramBotPollingService(
             TelegramApiClient telegramApiClient,
@@ -53,7 +63,8 @@ public class TelegramBotPollingService {
             AiTelegramIntentDetector aiTelegramIntentDetector,
             TelegramSearchResponseFormatter searchResponseFormatter,
             InboxItemEmbeddingBackfillService embeddingBackfillService,
-            MemoryAnswerService memoryAnswerService
+            MemoryAnswerService memoryAnswerService,
+            MemoryTaskService memoryTaskService
     ) {
         this.telegramApiClient = telegramApiClient;
         this.properties = properties;
@@ -65,6 +76,7 @@ public class TelegramBotPollingService {
         this.searchResponseFormatter = searchResponseFormatter;
         this.embeddingBackfillService = embeddingBackfillService;
         this.memoryAnswerService = memoryAnswerService;
+        this.memoryTaskService = memoryTaskService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -125,6 +137,18 @@ public class TelegramBotPollingService {
         }
         if (normalizedText.equals("/embeddings") || normalizedText.startsWith("/embeddings ")) {
             handleEmbeddings(chatId, normalizedText);
+            return;
+        }
+        if (normalizedText.equals("/tasks")) {
+            handleTasks(chatId);
+            return;
+        }
+        if (normalizedText.equals("/done") || normalizedText.startsWith("/done ")) {
+            handleDone(chatId, normalizedText);
+            return;
+        }
+        if (normalizedText.equals("/snooze") || normalizedText.startsWith("/snooze ")) {
+            handleSnooze(chatId, normalizedText);
             return;
         }
 
@@ -278,6 +302,111 @@ public class TelegramBotPollingService {
 
         int updated = embeddingBackfillService.backfillMissingEmbeddings(25);
         telegramApiClient.sendMessage(chatId, "Embeddings backfill: обновлено " + updated + " записей.");
+    }
+
+    private static final Pattern DURATION_PATTERN =
+            Pattern.compile("^(\\d+)\\s*(мин|min|m|ч|h|д|d)$", Pattern.CASE_INSENSITIVE);
+
+    private void handleTasks(long chatId) {
+        List<OpenTask> tasks = memoryTaskService.listOpenTasks(chatId, 20);
+        lastListedTasks.put(chatId, tasks);
+        telegramApiClient.sendMessage(chatId, formatTasks(tasks));
+    }
+
+    private void handleDone(long chatId, String command) {
+        String argument = command.substring("/done".length()).trim();
+        OpenTask task = resolveListedTask(chatId, argument);
+        if (task == null) {
+            telegramApiClient.sendMessage(chatId, "Не нашёл задачу под этим номером. Покажи список: /tasks");
+            return;
+        }
+        boolean completed = memoryTaskService.completeTask(task.id());
+        telegramApiClient.sendMessage(
+                chatId,
+                completed ? "Готово: " + taskTitle(task) : "Не удалось отметить задачу (возможно, уже выполнена)."
+        );
+    }
+
+    private void handleSnooze(long chatId, String command) {
+        String argument = command.substring("/snooze".length()).trim();
+        String[] parts = argument.split("\\s+", 2);
+        if (parts.length < 2) {
+            telegramApiClient.sendMessage(chatId, "Формат: /snooze <номер> <интервал>, например /snooze 1 2h");
+            return;
+        }
+        OpenTask task = resolveListedTask(chatId, parts[0]);
+        if (task == null) {
+            telegramApiClient.sendMessage(chatId, "Не нашёл задачу под этим номером. Покажи список: /tasks");
+            return;
+        }
+        Duration delay = parseDuration(parts[1]);
+        if (delay == null) {
+            telegramApiClient.sendMessage(chatId, "Не понял интервал. Примеры: 30m, 2h, 1d");
+            return;
+        }
+        boolean snoozed = memoryTaskService.snoozeTask(task.id(), delay);
+        telegramApiClient.sendMessage(
+                chatId,
+                snoozed ? "Отложил: " + taskTitle(task) + " на " + parts[1] : "Не удалось отложить задачу."
+        );
+    }
+
+    private OpenTask resolveListedTask(long chatId, String indexText) {
+        List<OpenTask> tasks = lastListedTasks.get(chatId);
+        if (tasks == null || tasks.isEmpty() || !StringUtils.hasText(indexText)) {
+            return null;
+        }
+        Integer index = parsePositiveInt(indexText);
+        if (index == null || index < 1 || index > tasks.size()) {
+            return null;
+        }
+        return tasks.get(index - 1);
+    }
+
+    private Integer parsePositiveInt(String value) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private Duration parseDuration(String text) {
+        Matcher matcher = DURATION_PATTERN.matcher(text.trim().toLowerCase(Locale.ROOT));
+        if (!matcher.matches()) {
+            return null;
+        }
+        long amount = Long.parseLong(matcher.group(1));
+        return switch (matcher.group(2)) {
+            case "m", "min", "мин" -> Duration.ofMinutes(amount);
+            case "h", "ч" -> Duration.ofHours(amount);
+            case "d", "д" -> Duration.ofDays(amount);
+            default -> null;
+        };
+    }
+
+    private String formatTasks(List<OpenTask> tasks) {
+        if (tasks.isEmpty()) {
+            return "Открытых задач нет.";
+        }
+        StringBuilder builder = new StringBuilder("Открытые задачи:\n");
+        for (int i = 0; i < tasks.size(); i++) {
+            OpenTask task = tasks.get(i);
+            builder.append(i + 1).append(". ").append(taskTitle(task));
+            if (task.dueAt() != null) {
+                builder.append(" (до ").append(task.dueAt().toLocalDate()).append(")");
+            }
+            builder.append("\n");
+        }
+        return builder.toString().trim();
+    }
+
+    private String taskTitle(OpenTask task) {
+        String title = task.title();
+        if (title == null) {
+            return "(без названия)";
+        }
+        return title.length() <= 80 ? title : title.substring(0, 77) + "...";
     }
 
     private String formatItems(String title, List<InboxItemResponse> items) {

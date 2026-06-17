@@ -44,7 +44,9 @@
   - Миграция `011`: `memory_units.reminded_at` + индекс `due_at`.
   - `MemoryReminderService.dueReminders/markReminded` + `TelegramReminderScheduler` (`@Scheduled`, загейчен `telegram.bot.enabled` → в тестах не активен). Доставка → отметка `reminded_at` только после успешной отправки.
   - ⚠️ Нужен прогон `memoryEval`, чтобы подтвердить, что изменение extraction не просадило качество (и проверить, помог ли реальный temporal).
-- [ ] **2.2** Управление задачами из бота: `/done`, `/snooze <время>`, листинг открытых (зависит от 2.1).
+- [x] **2.2** Управление задачами из бота — **сделано**: `/tasks` (нумерованный список открытых TASK/REMINDER, состояние последнего списка — per-chat), `/done <n>`, `/snooze <n> <30m|2h|1d>` (по номеру из последнего `/tasks` чата; snooze сбрасывает `reminded_at`). Миграция `012` (`completed_at`), `MemoryTaskService`, `findDueReminders` исключает выполненные. Тесты на сервис/команды.
+
+**Eval-валидация extraction-изменения (2.1):** accuracy 0.9000 → 0.8988 (в пределах шума судьи). +4 реальных temporal-улучшения («вчера»-запросы заработали); −2 — шум accumulated-режима; −3 `long_diary_*` оказались **execution_error от латентного бага** `value too long for varchar(255)` в `memory_units.title` — **исправлено** обрезкой title в `@PrePersist`/`@PreUpdate` (`MemoryUnit` + `InboxItem`). Вывод: extraction-изменение нетто-позитивно по качеству и обязательно для Фазы 2. Чистую temporal-валидацию по-прежнему лучше гонять в `isolated`.
 
 ## Фаза 3 — Качество поиска и ответов (M, итеративно, мерить eval'ом)
 

@@ -124,18 +124,28 @@ public class InboxItem {
         this.actionable = false;
     }
 
+    private static final int MAX_TITLE_LENGTH = 255;
+
     @PrePersist
     void prePersist() {
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;
+        clampTitle();
         refreshSearchText();
     }
 
     @PreUpdate
     void preUpdate() {
         updatedAt = OffsetDateTime.now();
+        clampTitle();
         refreshSearchText();
+    }
+
+    private void clampTitle() {
+        if (title != null && title.length() > MAX_TITLE_LENGTH) {
+            title = title.substring(0, MAX_TITLE_LENGTH);
+        }
     }
 
     public void setTags(Set<String> tags) {

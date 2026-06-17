@@ -34,7 +34,9 @@ import ru.ravil.petproject.service.InboxItemService;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.MemoryAnswer;
 import ru.ravil.petproject.service.MemoryAnswerService;
+import ru.ravil.petproject.service.MemoryTaskService;
 import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
+import ru.ravil.petproject.service.OpenTask;
 import ru.ravil.petproject.service.SearchPeriod;
 
 class TelegramBotPollingServiceTest {
@@ -44,6 +46,7 @@ class TelegramBotPollingServiceTest {
     private InboxItemSearchService inboxItemSearchService;
     private InboxItemEmbeddingBackfillService embeddingBackfillService;
     private MemoryAnswerService memoryAnswerService;
+    private MemoryTaskService memoryTaskService;
     private AiTelegramIntentDetector aiTelegramIntentDetector;
 
     @BeforeEach
@@ -53,6 +56,7 @@ class TelegramBotPollingServiceTest {
         inboxItemSearchService = Mockito.mock(InboxItemSearchService.class);
         embeddingBackfillService = Mockito.mock(InboxItemEmbeddingBackfillService.class);
         memoryAnswerService = Mockito.mock(MemoryAnswerService.class);
+        memoryTaskService = Mockito.mock(MemoryTaskService.class);
         aiTelegramIntentDetector = Mockito.mock(AiTelegramIntentDetector.class);
         when(aiTelegramIntentDetector.detect(anyString())).thenReturn(TelegramIntent.unknown());
         when(aiTelegramIntentDetector.detectAny(anyString())).thenReturn(TelegramIntent.unknown());
@@ -520,6 +524,24 @@ class TelegramBotPollingServiceTest {
         verify(telegramApiClient).sendMessage(42, "Этот бот пока приватный.");
     }
 
+    @Test
+    void pollListsOpenTasks() {
+        TelegramBotPollingService service = service(null);
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "/tasks")));
+        when(memoryTaskService.listOpenTasks(42L, 20)).thenReturn(List.of(
+                new OpenTask(
+                        UUID.fromString("33333333-3333-3333-3333-333333333333"),
+                        "Оплатить интернет",
+                        OffsetDateTime.parse("2026-06-18T09:00:00Z")
+                )
+        ));
+
+        service.poll();
+
+        verify(telegramApiClient).sendMessage(42, "Открытые задачи:\n1. Оплатить интернет (до 2026-06-18)");
+        verify(inboxItemService, never()).captureAsync(any(CreateInboxItemRequest.class));
+    }
+
     private TelegramBotPollingService service(Long allowedChatId) {
         return service(allowedChatId, TelegramIntentMode.HYBRID_SAFE);
     }
@@ -538,7 +560,8 @@ class TelegramBotPollingServiceTest {
                         ZoneId.of("Europe/Moscow")
                 )),
                 embeddingBackfillService,
-                memoryAnswerService
+                memoryAnswerService,
+                memoryTaskService
         );
     }
 

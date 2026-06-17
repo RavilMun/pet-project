@@ -571,3 +571,14 @@ databaseChangeLog:
             columns:
               - column:
                   name: due_at
+
+  - changeSet:
+      id: 012-add-memory-unit-completed-at
+      author: codex
+      changes:
+        - addColumn:
+            tableName: memory_units
+            columns:
+              - column:
+                  name: completed_at
+                  type: timestamp with time zone
