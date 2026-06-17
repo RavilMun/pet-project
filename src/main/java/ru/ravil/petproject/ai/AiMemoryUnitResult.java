@@ -1,5 +1,6 @@
 package ru.ravil.petproject.ai;
 
+import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Set;
 import java.util.List;
@@ -14,6 +15,8 @@ public record AiMemoryUnitResult(
         double confidence,
         String sourceQuote,
         List<AiMemorySlotResult> slots,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+        OffsetDateTime occurredAt,
+        OffsetDateTime dueAt
 ) {
 }

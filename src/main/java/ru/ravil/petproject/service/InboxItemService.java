@@ -374,6 +374,8 @@ public class InboxItemService {
         unit.setSourceQuote(StringUtils.hasText(result.sourceQuote()) ? result.sourceQuote() : item.getRawText());
         unit.setActionable(result.actionable());
         unit.setConfidence(result.confidence());
+        unit.setOccurredAt(result.occurredAt());
+        unit.setDueAt(result.dueAt());
         unit.setTags(result.tags());
         if (result.slots() != null) {
             result.slots().stream()

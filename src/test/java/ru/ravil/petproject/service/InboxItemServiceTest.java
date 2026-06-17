@@ -298,7 +298,9 @@ InboxItemResponse response = inboxItemService.create(request);
                                         new AiMemorySlotResult(MemorySlotRole.PLACE, "Выборг", "выборг", MemorySlotValueType.TEXT, 0.98),
                                         new AiMemorySlotResult(MemorySlotRole.TIME, "в субботу", "суббота", MemorySlotValueType.TEXT, 0.85)
                                 ),
-                                Map.of("places", List.of("Выборг"))
+                                Map.of("places", List.of("Выборг")),
+                                OffsetDateTime.parse("2026-06-13T10:00:00Z"),
+                                null
                         ),
                         new AiMemoryUnitResult(
                                 MemoryUnitType.EVENT,
@@ -312,7 +314,9 @@ InboxItemResponse response = inboxItemService.create(request);
                                         new AiMemorySlotResult(MemorySlotRole.ACTION, "поднялись", "подняться", MemorySlotValueType.TEXT, 0.9),
                                         new AiMemorySlotResult(MemorySlotRole.PLACE, "башня Святого Олафа", "башня святого олафа", MemorySlotValueType.TEXT, 0.95)
                                 ),
-                                Map.of("places", List.of("Башня Святого Олафа"))
+                                Map.of("places", List.of("Башня Святого Олафа")),
+                                null,
+                                null
                         )
                 ))));
 inboxItemService.create(request);
@@ -333,6 +337,11 @@ inboxItemService.create(request);
                         "PLACE:башня святого олафа",
                         "TIME:суббота"
                 );
+        assertThat(captor.getValue().getMemoryUnits())
+                .filteredOn(unit -> "Поездка в Выборг".equals(unit.getTitle()))
+                .singleElement()
+                .extracting(MemoryUnit::getOccurredAt)
+                .isEqualTo(OffsetDateTime.parse("2026-06-13T10:00:00Z"));
     }
 
     @Test

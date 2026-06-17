@@ -73,6 +73,9 @@ public class MemoryUnit {
     @Column(name = "due_at")
     private OffsetDateTime dueAt;
 
+    @Column(name = "reminded_at")
+    private OffsetDateTime remindedAt;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "ai_metadata", columnDefinition = "jsonb")
     private Map<String, Object> aiMetadata;

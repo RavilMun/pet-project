@@ -27,6 +27,28 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
             select unit
             from MemoryUnit unit
             join fetch unit.item item
+            where unit.type in :types
+              and unit.dueAt is not null
+              and unit.dueAt <= :now
+              and unit.remindedAt is null
+              and item.telegramChatId is not null
+            order by unit.dueAt asc
+            """)
+    List<MemoryUnit> findDueReminders(
+            @Param("types") java.util.Collection<ru.ravil.petproject.domain.MemoryUnitType> types,
+            @Param("now") OffsetDateTime now,
+            Pageable pageable
+    );
+
+    @Modifying
+    @Transactional
+    @Query("update MemoryUnit unit set unit.remindedAt = :remindedAt where unit.id = :id")
+    int markReminded(@Param("id") UUID id, @Param("remindedAt") OffsetDateTime remindedAt);
+
+    @Query("""
+            select unit
+            from MemoryUnit unit
+            join fetch unit.item item
             where (item.createdAt >= :start and item.createdAt < :end)
                or (unit.occurredAt >= :start and unit.occurredAt < :end)
             order by item.createdAt desc, unit.createdAt asc

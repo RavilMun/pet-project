@@ -3,6 +3,11 @@ package ru.ravil.petproject.ai;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,6 +45,8 @@ public class AiMemoryUnitExtractionService {
                   "actionable": false,
                   "confidence": 0.0,
                   "sourceQuote": "short quote from the original note that supports this memory",
+                  "occurredAt": "absolute ISO-8601 datetime with timezone offset when the event happened, else null",
+                  "dueAt": "absolute ISO-8601 datetime with timezone offset when the task/reminder is due, else null",
                   "slots": [
                     {
                       "role": "one of SUBJECT,ACTOR,ACTION,OBJECT,PLACE,TIME,AMOUNT,PRICE,ORGANIZATION,PERSON,REASON,RESULT,ATTRIBUTE,TOPIC,OTHER",
@@ -59,6 +66,10 @@ public class AiMemoryUnitExtractionService {
                 }
               ]
             }
+            Resolve relative dates and times (e.g. "завтра", "в субботу", "сегодня вечером", "через 2 дня")
+            against the "Current datetime" given in the user message, and output occurredAt/dueAt as an absolute
+            ISO-8601 value with timezone offset. Use null when no date or time is implied. Set dueAt for TASK and
+            REMINDER units that have a deadline; set occurredAt for events that already happened or are scheduled.
             Extract 1-16 units. Split long or mixed notes into independent useful memories.
             Prefer units that would answer future user questions.
             Do not invent details that are not present in the note.
@@ -104,7 +115,8 @@ public class AiMemoryUnitExtractionService {
         }
 
         try {
-            String response = openAiClient.classify(SYSTEM_PROMPT, "Inbox text:\n" + rawText);
+            String userPrompt = "Current datetime: " + OffsetDateTime.now() + "\n\nInbox text:\n" + rawText;
+            String response = openAiClient.classify(SYSTEM_PROMPT, userPrompt);
             return Optional.of(parse(response));
         } catch (RuntimeException exception) {
             log.warn("AI memory extraction failed: {}", exception.getMessage());
@@ -135,7 +147,9 @@ public class AiMemoryUnitExtractionService {
                         confidence(unitNode),
                         text(unitNode, "sourceQuote"),
                         slots(unitNode),
-                        metadata(unitNode.path("metadata"))
+                        metadata(unitNode.path("metadata")),
+                        parseDateTime(unitNode, "occurredAt"),
+                        parseDateTime(unitNode, "dueAt")
                 ));
             });
             return new AiMemoryUnitExtractionResult(units);
@@ -199,6 +213,28 @@ public class AiMemoryUnitExtractionService {
             ));
         });
         return slots;
+    }
+
+    private OffsetDateTime parseDateTime(JsonNode root, String field) {
+        String value = text(root, field);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(value);
+        } catch (DateTimeParseException ignored) {
+            // fall through to looser formats
+        }
+        try {
+            return LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toOffsetDateTime();
+        } catch (DateTimeParseException ignored) {
+            // fall through
+        }
+        try {
+            return LocalDate.parse(value).atStartOfDay(ZoneId.systemDefault()).toOffsetDateTime();
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
     }
 
     private String firstText(JsonNode root, String firstField, String secondField) {

@@ -554,3 +554,20 @@ databaseChangeLog:
                   name: status
               - column:
                   name: next_attempt_at
+
+  - changeSet:
+      id: 011-add-memory-unit-reminded-at
+      author: codex
+      changes:
+        - addColumn:
+            tableName: memory_units
+            columns:
+              - column:
+                  name: reminded_at
+                  type: timestamp with time zone
+        - createIndex:
+            tableName: memory_units
+            indexName: idx_memory_units_due_at
+            columns:
+              - column:
+                  name: due_at
