@@ -324,7 +324,7 @@ public class InboxItemSearchService {
             if (candidate.score() < lexicalCutoff) {
                 continue;
             }
-            if (isImplicitQuestionMemory(unit, itemTypes)) {
+            if (isImplicitQuestionMemory(unit, itemTypes, query)) {
                 continue;
             }
             if (!hasRequiredAnchorMatch(unit, queryTokens, itemTypes, tags, false, dateRange, topLexicalScore, candidate.score())) {
@@ -340,7 +340,7 @@ public class InboxItemSearchService {
             if (topLexicalScore <= 0 && itemTypes.isEmpty() && tags.isEmpty() && baseScore < MIN_RELEVANCE_SCORE && !dateRange.hasBounds()) {
                 continue;
             }
-            if (isImplicitQuestionMemory(unit, itemTypes)) {
+            if (isImplicitQuestionMemory(unit, itemTypes, query)) {
                 continue;
             }
             if (!hasRequiredAnchorMatch(unit, queryTokens, itemTypes, tags, true, dateRange, topLexicalScore, baseScore)) {
@@ -436,8 +436,15 @@ public class InboxItemSearchService {
         return score;
     }
 
-    private boolean isImplicitQuestionMemory(MemoryUnit unit, Set<String> itemTypes) {
-        return unit.getType() == MemoryUnitType.QUESTION && !itemTypes.contains(MemoryUnitType.QUESTION.name());
+    private boolean isImplicitQuestionMemory(MemoryUnit unit, Set<String> itemTypes, String query) {
+        if (unit.getType() != MemoryUnitType.QUESTION || itemTypes.contains(MemoryUnitType.QUESTION.name())) {
+            return false;
+        }
+        return !mentionsQuestionKeyword(query);
+    }
+
+    private boolean mentionsQuestionKeyword(String query) {
+        return normalizeText(query).contains("вопрос");
     }
 
     private boolean hasRequiredAnchorMatch(
@@ -571,7 +578,7 @@ public class InboxItemSearchService {
 
         int commonPrefixLength = commonPrefixLength(queryToken, fieldToken);
         int minLength = Math.min(queryToken.length(), fieldToken.length());
-        if (minLength >= 5 && commonPrefixLength >= 4) {
+        if (minLength >= 4 && commonPrefixLength >= 4) {
             return prefixScore;
         }
         return 0;

@@ -66,12 +66,17 @@ public class MemoryAnswerService {
             - Ignore memories about another person if the question is about the user, unless that other person is explicitly named.
             - If several memories mention similar objects, people, places, or dates, use only the ones matching the requested
               subject, action/relation, place, and time.
+            - If several memory units share only a place, organization, topic, or tag but refer to different objects,
+              people, or amounts, do not combine them into one answer. Use only the unit(s) whose object/subject is the
+              one named in the question, and never add other purchases, facts, or events "for completeness".
             - If the question asks for a specific attribute such as price, place, time, reason, person, or source, answer only
               when that exact attribute is present in the selected sourceIndexes.
             - If selected sources do not contain the requested attribute, set canAnswer=false, missingInfo=true,
               answer="", confidence<=0.4, and sourceIndexes=[].
             - If no source directly supports the answer, set canAnswer=false and sourceIndexes=[].
             - Prefer direct answers over restating the whole note.
+            - Preserve the exact verb, tense, and state used in the source (for example do not turn "ordered" into
+              "bought", or "planned" into "done") — do not substitute a different state when phrasing the answer.
             - Answer only when the retrieved memory contains direct evidence for the requested relation.
             - If the question asks where, use PLACE or ORGANIZATION slots when present.
             - If the question asks when, use TIME slots, occurredAt, or dueAt when present.
