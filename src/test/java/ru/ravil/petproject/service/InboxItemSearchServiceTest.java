@@ -47,10 +47,16 @@ class InboxItemSearchServiceTest {
 
     @BeforeEach
     void setUp() {
+        MemoryRerankService disabledReranker = new MemoryRerankService(
+                null,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new ru.ravil.petproject.config.OpenAiProperties(false, null, null, null, false)
+        );
         inboxItemSearchService = new InboxItemSearchService(
                 memoryUnitRepository,
                 new MemoryUnitMapper(),
-                aiEmbeddingServiceProvider
+                aiEmbeddingServiceProvider,
+                disabledReranker
         );
     }
 

@@ -25,11 +25,13 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "inbox_items")
+@BatchSize(size = 64)
 @Getter
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -82,6 +84,7 @@ public class InboxItem {
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "inbox_item_tags", joinColumns = @JoinColumn(name = "item_id"))
     @Column(name = "tag", nullable = false)
+    @BatchSize(size = 64)
     @Setter(AccessLevel.NONE)
     private Set<String> tags = new LinkedHashSet<>();
 

@@ -19,6 +19,11 @@ public class AiEmbeddingService {
         this.openAiClientProvider = openAiClientProvider;
     }
 
+    public Optional<String> currentModel() {
+        OpenAiClient openAiClient = openAiClientProvider.getIfAvailable();
+        return openAiClient == null ? Optional.empty() : Optional.ofNullable(openAiClient.embeddingModel());
+    }
+
     public Optional<EmbeddingResult> embed(String text) {
         OpenAiClient openAiClient = openAiClientProvider.getIfAvailable();
         if (openAiClient == null || !StringUtils.hasText(text)) {

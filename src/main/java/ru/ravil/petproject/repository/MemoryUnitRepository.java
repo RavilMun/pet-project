@@ -27,8 +27,8 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
             select unit
             from MemoryUnit unit
             join fetch unit.item item
-            where item.createdAt >= :start
-              and item.createdAt < :end
+            where (item.createdAt >= :start and item.createdAt < :end)
+               or (unit.occurredAt >= :start and unit.occurredAt < :end)
             order by item.createdAt desc, unit.createdAt asc
             """)
     List<MemoryUnit> findBySourceCreatedAtBetween(
@@ -239,8 +239,8 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     select unit.*
                     from memory_units unit
                     join inbox_items item on item.id = unit.inbox_item_id
-                    where item.created_at >= :start
-                      and item.created_at < :end
+                    where ((item.created_at >= :start and item.created_at < :end)
+                           or (unit.occurred_at >= :start and unit.occurred_at < :end))
                       and (:hasTypes = false or unit.type in (:types))
                       and (
                         (:hasQuery = false and :hasRelaxedQuery = false and :hasTags = false)
@@ -312,8 +312,8 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     select count(unit.id)
                     from memory_units unit
                     join inbox_items item on item.id = unit.inbox_item_id
-                    where item.created_at >= :start
-                      and item.created_at < :end
+                    where ((item.created_at >= :start and item.created_at < :end)
+                           or (unit.occurred_at >= :start and unit.occurred_at < :end))
                       and (:hasTypes = false or unit.type in (:types))
                       and (
                         (:hasQuery = false and :hasRelaxedQuery = false and :hasTags = false)
@@ -409,6 +409,19 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
     )
     List<UUID> findIdsMissingEmbedding(Pageable pageable);
 
+    @Query(
+            value = """
+                    select unit.id
+                    from memory_units unit
+                    where unit.embedding is null
+                       or unit.embedding_model is null
+                       or unit.embedding_model <> :currentModel
+                    order by unit.created_at asc
+                    """,
+            nativeQuery = true
+    )
+    List<UUID> findIdsMissingOrStaleEmbedding(@Param("currentModel") String currentModel, Pageable pageable);
+
     @Modifying
     @Transactional
     @Query(
@@ -452,8 +465,8 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     from memory_units unit
                     join inbox_items item on item.id = unit.inbox_item_id
                     where unit.embedding is not null
-                      and item.created_at >= :start
-                      and item.created_at < :end
+                      and ((item.created_at >= :start and item.created_at < :end)
+                           or (unit.occurred_at >= :start and unit.occurred_at < :end))
                       and (:hasTypes = false or unit.type in (:types))
                     order by unit.embedding <=> cast(:embedding as vector), item.created_at desc
                     """,

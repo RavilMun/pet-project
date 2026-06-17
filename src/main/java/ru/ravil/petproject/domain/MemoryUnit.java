@@ -26,6 +26,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.springframework.util.StringUtils;
@@ -79,10 +80,12 @@ public class MemoryUnit {
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "memory_unit_tags", joinColumns = @JoinColumn(name = "memory_unit_id"))
     @Column(name = "tag", nullable = false)
+    @BatchSize(size = 64)
     @Setter(AccessLevel.NONE)
     private Set<String> tags = new LinkedHashSet<>();
 
     @OneToMany(mappedBy = "unit", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 64)
     @Setter(AccessLevel.NONE)
     private Set<MemorySlot> slots = new LinkedHashSet<>();
 

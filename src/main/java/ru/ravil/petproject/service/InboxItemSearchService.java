@@ -36,6 +36,7 @@ public class InboxItemSearchService {
     private static final int VECTOR_RANK_PENALTY = 4;
     private static final int MIN_RELEVANCE_SCORE = 15;
     private static final int WEAK_LEXICAL_SCORE = 50;
+    private static final int RERANK_WINDOW = 20;
     private static final Set<String> RELAXED_QUERY_STOP_WORDS = Set.of(
             "а", "и", "или", "но", "что", "кто", "где", "когда", "как", "какой", "какая", "какие", "какое", "какую",
             "я", "мне", "меня", "мой", "моя", "мои", "у", "для", "про", "по", "из", "с", "со", "в", "во", "на", "к", "ко",
@@ -45,15 +46,18 @@ public class InboxItemSearchService {
     private final MemoryUnitRepository memoryUnitRepository;
     private final MemoryUnitMapper memoryUnitMapper;
     private final ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
+    private final MemoryRerankService memoryRerankService;
 
     public InboxItemSearchService(
             MemoryUnitRepository memoryUnitRepository,
             MemoryUnitMapper memoryUnitMapper,
-            ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider
+            ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider,
+            MemoryRerankService memoryRerankService
     ) {
         this.memoryUnitRepository = memoryUnitRepository;
         this.memoryUnitMapper = memoryUnitMapper;
         this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
+        this.memoryRerankService = memoryRerankService;
     }
 
     @Transactional(readOnly = true)
@@ -186,9 +190,13 @@ public class InboxItemSearchService {
                 normalizedTags,
                 dateRange
         );
-        return rankedCandidates.stream()
-                .limit(normalizedLimit)
+        int rerankWindow = Math.min(rankedCandidates.size(), Math.max(normalizedLimit, RERANK_WINDOW));
+        List<MemoryUnitResponse> topResponses = rankedCandidates.stream()
+                .limit(rerankWindow)
                 .map(memoryUnitMapper::toResponse)
+                .toList();
+        return memoryRerankService.rerank(normalizedQuery, topResponses).stream()
+                .limit(normalizedLimit)
                 .toList();
     }
 

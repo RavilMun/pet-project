@@ -7,6 +7,7 @@ public record OpenAiProperties(
         boolean enabled,
         String apiKey,
         String model,
-        String embeddingModel
+        String embeddingModel,
+        boolean rerankEnabled
 ) {
 }

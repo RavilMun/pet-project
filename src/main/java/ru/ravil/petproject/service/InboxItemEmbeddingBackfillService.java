@@ -32,7 +32,10 @@ public class InboxItemEmbeddingBackfillService {
     @Transactional
     public int backfillMissingEmbeddings(Integer limit) {
         int normalizedLimit = normalizeLimit(limit);
-        List<UUID> ids = memoryUnitRepository.findIdsMissingEmbedding(PageRequest.of(0, normalizedLimit));
+        PageRequest pageRequest = PageRequest.of(0, normalizedLimit);
+        List<UUID> ids = aiEmbeddingService.currentModel()
+                .map(model -> memoryUnitRepository.findIdsMissingOrStaleEmbedding(model, pageRequest))
+                .orElseGet(() -> memoryUnitRepository.findIdsMissingEmbedding(pageRequest));
         int updated = 0;
 
         for (UUID id : ids) {
