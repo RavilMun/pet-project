@@ -22,6 +22,12 @@ public interface InboxItemRepository extends JpaRepository<InboxItem, UUID> {
 
     List<InboxItem> findByStatusInOrderByCreatedAtAsc(Collection<InboxItemStatus> statuses, Pageable pageable);
 
+    List<InboxItem> findByStatusInAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAsc(
+            Collection<InboxItemStatus> statuses,
+            OffsetDateTime nextAttemptAt,
+            Pageable pageable
+    );
+
     Optional<InboxItem> findFirstByTelegramChatIdOrderByCreatedAtDesc(Long telegramChatId);
 
     Page<InboxItem> findByCreatedAtBetweenOrderByCreatedAtDesc(

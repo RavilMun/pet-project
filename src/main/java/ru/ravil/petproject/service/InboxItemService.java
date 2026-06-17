@@ -44,6 +44,9 @@ public class InboxItemService {
     private static final Logger log = LoggerFactory.getLogger(InboxItemService.class);
     private static final int MAX_REPROCESS_LIMIT = 100;
     private static final int MAX_ERROR_LENGTH = 1000;
+    private static final int MAX_PROCESSING_ATTEMPTS = 6;
+    private static final long RETRY_BASE_MINUTES = 1L;
+    private static final long RETRY_MAX_MINUTES = 30L;
 
     private final InboxItemRepository inboxItemRepository;
     private final InboxItemMapper inboxItemMapper;
@@ -106,8 +109,10 @@ public class InboxItemService {
         } catch (RuntimeException exception) {
             item.setStatus(InboxItemStatus.FAILED_AI);
             item.setLastProcessingError(truncateError(exception.getMessage()));
+            item.setNextAttemptAt(nextAttemptAt(item.getProcessingAttempts()));
             InboxItem savedItem = inboxItemRepository.save(item);
-            log.warn("AI processing failed for inbox item {}: {}", id, exception.getMessage());
+            log.warn("AI processing failed for inbox item {} (attempt {}): {}",
+                    id, item.getProcessingAttempts(), exception.getMessage());
             return inboxItemMapper.toResponse(savedItem);
         }
     }
@@ -137,6 +142,27 @@ public class InboxItemService {
 
     public InboxItemResponse reprocess(UUID id) {
         return selfProvider.getObject().process(id, null);
+    }
+
+    /**
+     * Scheduled retry sweep: reprocesses FAILED_AI items whose backoff window
+     * ({@code next_attempt_at}) has elapsed. Items that exhausted MAX_PROCESSING_ATTEMPTS
+     * have {@code next_attempt_at = null} and are skipped (manual {@link #reprocess} only).
+     */
+    public int reprocessDue(int limit) {
+        List<InboxItem> due = inboxItemRepository.findByStatusInAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAsc(
+                List.of(InboxItemStatus.FAILED_AI),
+                OffsetDateTime.now(),
+                PageRequest.of(0, normalizeReprocessLimit(limit))
+        );
+        int processed = 0;
+        for (InboxItem item : due) {
+            InboxItemResponse response = selfProvider.getObject().process(item.getId(), null);
+            if (response.status() == InboxItemStatus.PROCESSED) {
+                processed++;
+            }
+        }
+        return processed;
     }
 
     public int reprocessPending(int limit) {
@@ -425,6 +451,14 @@ public class InboxItemService {
             return MAX_REPROCESS_LIMIT;
         }
         return Math.min(limit, MAX_REPROCESS_LIMIT);
+    }
+
+    private static OffsetDateTime nextAttemptAt(int attempts) {
+        if (attempts >= MAX_PROCESSING_ATTEMPTS) {
+            return null;
+        }
+        long minutes = Math.min(RETRY_MAX_MINUTES, RETRY_BASE_MINUTES * (1L << Math.max(0, attempts - 1)));
+        return OffsetDateTime.now().plusMinutes(minutes);
     }
 
     private void updateMemoryUnitEmbeddingsIfAvailable(InboxItem item) {

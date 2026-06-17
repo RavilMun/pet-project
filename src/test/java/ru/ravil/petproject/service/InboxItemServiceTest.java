@@ -3,6 +3,7 @@ package ru.ravil.petproject.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -398,8 +399,30 @@ inboxItemService.create(request);
         InboxItem saved = captor.getValue();
         assertThat(saved.getProcessingAttempts()).isEqualTo(1);
         assertThat(saved.getLastProcessingError()).isNotNull();
+        // Backoff scheduled for a later retry sweep.
+        assertThat(saved.getNextAttemptAt()).isNotNull();
         // Raw capture must remain lexically searchable via its fallback memory unit.
         assertThat(saved.getMemoryUnits()).hasSize(1);
+    }
+
+    @Test
+    void reprocessDueReprocessesFailedItemsThatBecomeDue() {
+        InboxItem failed = persistedItem("raw note");
+        failed.setStatus(InboxItemStatus.FAILED_AI);
+        failed.setNextAttemptAt(OffsetDateTime.now().minusMinutes(1));
+        lastSaved.set(failed);
+        when(inboxItemRepository.findByStatusInAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAsc(
+                eq(List.of(InboxItemStatus.FAILED_AI)),
+                any(OffsetDateTime.class),
+                any(PageRequest.class)
+        )).thenReturn(List.of(failed));
+        when(aiClassificationService.classify("raw note"))
+                .thenReturn(Optional.of(classification("Raw note", null, InboxItemType.NOTE, Set.of(), InboxItemPriority.MEDIUM, false)));
+
+        int processed = inboxItemService.reprocessDue(50);
+
+        assertThat(processed).isEqualTo(1);
+        assertThat(failed.getStatus()).isEqualTo(InboxItemStatus.PROCESSED);
     }
 
     @Test
