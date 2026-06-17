@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import ru.ravil.petproject.ai.AiEmbeddingService;
 import ru.ravil.petproject.ai.EmbeddingResult;
+import ru.ravil.petproject.config.SearchRankingProperties;
 import ru.ravil.petproject.domain.InboxItemType;
 import ru.ravil.petproject.domain.MemorySlot;
 import ru.ravil.petproject.domain.MemoryUnit;
@@ -32,11 +33,6 @@ public class InboxItemSearchService {
 
     private static final int DEFAULT_LIMIT = 10;
     private static final int MAX_LIMIT = 50;
-    private static final int VECTOR_RANK_BONUS = 40;
-    private static final int VECTOR_RANK_PENALTY = 4;
-    private static final int MIN_RELEVANCE_SCORE = 15;
-    private static final int WEAK_LEXICAL_SCORE = 50;
-    private static final int RERANK_WINDOW = 20;
     private static final Set<String> RELAXED_QUERY_STOP_WORDS = Set.of(
             "а", "и", "или", "но", "что", "кто", "где", "когда", "как", "какой", "какая", "какие", "какое", "какую",
             "я", "мне", "меня", "мой", "моя", "мои", "у", "для", "про", "по", "из", "с", "со", "в", "во", "на", "к", "ко",
@@ -47,17 +43,20 @@ public class InboxItemSearchService {
     private final MemoryUnitMapper memoryUnitMapper;
     private final ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
     private final MemoryRerankService memoryRerankService;
+    private final SearchRankingProperties ranking;
 
     public InboxItemSearchService(
             MemoryUnitRepository memoryUnitRepository,
             MemoryUnitMapper memoryUnitMapper,
             ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider,
-            MemoryRerankService memoryRerankService
+            MemoryRerankService memoryRerankService,
+            SearchRankingProperties ranking
     ) {
         this.memoryUnitRepository = memoryUnitRepository;
         this.memoryUnitMapper = memoryUnitMapper;
         this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
         this.memoryRerankService = memoryRerankService;
+        this.ranking = ranking;
     }
 
     @Transactional(readOnly = true)
@@ -190,7 +189,7 @@ public class InboxItemSearchService {
                 normalizedTags,
                 dateRange
         );
-        int rerankWindow = Math.min(rankedCandidates.size(), Math.max(normalizedLimit, RERANK_WINDOW));
+        int rerankWindow = Math.min(rankedCandidates.size(), Math.max(normalizedLimit, ranking.rerankWindow()));
         List<MemoryUnitResponse> topResponses = rankedCandidates.stream()
                 .limit(rerankWindow)
                 .map(memoryUnitMapper::toResponse)
@@ -343,9 +342,9 @@ public class InboxItemSearchService {
 
         for (int index = 0; index < vectorCandidates.size(); index++) {
             MemoryUnit unit = vectorCandidates.get(index);
-            int vectorScore = Math.max(0, VECTOR_RANK_BONUS - (index * VECTOR_RANK_PENALTY));
+            int vectorScore = Math.max(0, ranking.vectorRankBonus() - (index * ranking.vectorRankPenalty()));
             int baseScore = score(unit, query, itemTypes, tags);
-            if (topLexicalScore <= 0 && itemTypes.isEmpty() && tags.isEmpty() && baseScore < MIN_RELEVANCE_SCORE && !dateRange.hasBounds()) {
+            if (topLexicalScore <= 0 && itemTypes.isEmpty() && tags.isEmpty() && baseScore < ranking.minRelevanceScore() && !dateRange.hasBounds()) {
                 continue;
             }
             if (isImplicitQuestionMemory(unit, itemTypes, query)) {
@@ -384,18 +383,18 @@ public class InboxItemSearchService {
         if (!StringUtils.hasText(query) || topLexicalScore <= 0) {
             return 0;
         }
-        if (topLexicalScore < MIN_RELEVANCE_SCORE) {
+        if (topLexicalScore < ranking.minRelevanceScore()) {
             return 0;
         }
-        double ratio = contentTokens(query).size() >= 3 ? 0.66d : 0.5d;
-        return Math.max(MIN_RELEVANCE_SCORE, (int) Math.ceil(topLexicalScore * ratio));
+        double ratio = contentTokens(query).size() >= 3 ? ranking.lexicalCutoffRatioHigh() : ranking.lexicalCutoffRatioLow();
+        return Math.max(ranking.minRelevanceScore(), (int) Math.ceil(topLexicalScore * ratio));
     }
 
     private int vectorRelevanceCutoff(int topLexicalScore) {
         if (topLexicalScore <= 0) {
-            return MIN_RELEVANCE_SCORE;
+            return ranking.minRelevanceScore();
         }
-        return Math.max(MIN_RELEVANCE_SCORE, topLexicalScore / 2);
+        return Math.max(ranking.minRelevanceScore(), topLexicalScore / 2);
     }
 
     private Comparator<MemoryUnit> searchComparator(String query, Set<String> itemTypes, Set<String> tags) {
@@ -468,7 +467,7 @@ public class InboxItemSearchService {
         if (queryTokens.isEmpty() || !itemTypes.isEmpty() || !tags.isEmpty()) {
             return true;
         }
-        if (vectorCandidate && dateRange.hasBounds() && topLexicalScore < WEAK_LEXICAL_SCORE && baseScore == 0) {
+        if (vectorCandidate && dateRange.hasBounds() && topLexicalScore < ranking.weakLexicalScore() && baseScore == 0) {
             return true;
         }
 

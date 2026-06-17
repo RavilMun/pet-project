@@ -69,7 +69,7 @@ A hand-rolled hybrid ranker over `MemoryUnit`, not a vector-only or pure-FTS sea
 
 Date-range filtering (TODAY/YESTERDAY periods, see `SearchPeriod`) matches a `MemoryUnit` when **either** its source `item.created_at` **or** its own `occurred_at` falls in range — so "what happened in March" finds events dated to March even if recorded later. This only applies when an explicit period is requested; there is intentionally no date fallback for date-less queries.
 
-When tuning ranking, prefer adjusting the constants/cutoffs and `score()` weights over restructuring the lexical→vector→rank pipeline; the eval harness (below) is the way to validate changes empirically rather than reasoning about it in the abstract.
+When tuning ranking, prefer adjusting the cutoffs/weights over restructuring the lexical→vector→rank pipeline; the eval harness (below) is the way to validate changes empirically rather than reasoning about it in the abstract. The top-level dials (vector bonus/penalty, min-relevance & weak-lexical cutoffs, rerank window, lexical-cutoff ratios) are exposed as `search.ranking.*` (`SearchRankingProperties`) so they can be swept without recompiling; the fine-grained per-field `score()` weights are still in-code constants.
 
 ### Question answering (`MemoryAnswerService`)
 

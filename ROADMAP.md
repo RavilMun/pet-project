@@ -50,7 +50,7 @@
 
 ## Фаза 3 — Качество поиска и ответов (M, итеративно, мерить eval'ом)
 
-- [ ] **3.1** Вынести веса ранкера (`score()`, ~700 строк магических констант) в `@ConfigurationProperties`.
+- [x] **3.1** Тюнинг-дайлы ранкера вынесены в `SearchRankingProperties` (`search.ranking.*`): vector bonus/penalty, min-relevance/weak-lexical cutoffs, rerank-window, lexical-cutoff ratios. Дефолты = прежним константам (тест-набор зелёный, поведение не изменилось) → теперь можно свипать eval'ом без перекомпиляции. Тонкие per-field веса `score()` пока в коде.
 - [ ] **3.2** Тюнинг reranker'а на реальном eval (окно, порог, модель).
 - [ ] **3.3** Морфология вместо `commonPrefixLength` для русского (стемминг в скоринге).
 

@@ -56,7 +56,8 @@ class InboxItemSearchServiceTest {
                 memoryUnitRepository,
                 new MemoryUnitMapper(),
                 aiEmbeddingServiceProvider,
-                disabledReranker
+                disabledReranker,
+                new ru.ravil.petproject.config.SearchRankingProperties(40, 4, 15, 50, 20, 0.66d, 0.5d)
         );
     }
 
