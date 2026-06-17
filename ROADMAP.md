@@ -32,7 +32,9 @@
   - **`process(id, request?)`**: classify→extract→embed; **успех** → fallback-юнит заменяется реальными, `status=PROCESSED`; **ошибка** (в т.ч. `AiProcessingUnavailableException`) → `catch`: `status=FAILED_AI`, `attempts++`, `last_processing_error`, **fallback-юнит остаётся** (запись ищется), исключение НЕ пробрасывается.
   - **Reprocess:** `reprocess(id)` = `process(id, null)`; `reprocessPending(limit)` по `findByStatusInOrderByCreatedAtAsc([PENDING_AI, FAILED_AI])` — seam для шедулера 1.2. REST `POST /api/inbox-items/{id}/reprocess`.
   - **Совместимость:** меняется инвариант (`create` больше не кидает `AiProcessingUnavailableException` наружу) — переписать соответствующие тесты и шаг 2 пайплайна в CLAUDE.md. Telegram-формулировку «сохранил, разберу позже» и батч-reprocess можно оставить заготовками под 1.2.
-- [ ] **1.2** Async-обработка ИИ-шагов (зависит от 1.1): классификация/извлечение/эмбеддинг в фон с ретраями; мгновенный отклик в Telegram.
+- [~] **1.2** Async-обработка ИИ-шагов (зависит от 1.1):
+  - [x] **1.2a** `@EnableAsync` + `InboxItemService.captureAsync` (сохраняет сырьё, возвращает `PENDING_AI`-снимок сразу, обработка в фоне через `@Async scheduleProcessing`). Telegram-капча → мгновенный «Сохранил, разберу позже», мёртвый catch убран. REST `create` оставлен синхронным. Весь тест-набор зелёный.
+  - [ ] **1.2b** `@Scheduled` авто-ретрай `FAILED_AI`/`PENDING_AI` с backoff по `next_attempt_at` (загейтить, чтобы не мешал тестам; cap по `processing_attempts`).
 - [ ] **1.3** Устойчивость OpenAI: retry+backoff на 429/5xx, таймауты, лог причины.
 
 ## Фаза 2 — Замкнуть петлю напоминаний (M) — *данные уже есть, фича не работает*

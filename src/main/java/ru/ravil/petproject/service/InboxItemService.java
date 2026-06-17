@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -108,6 +109,29 @@ public class InboxItemService {
             InboxItem savedItem = inboxItemRepository.save(item);
             log.warn("AI processing failed for inbox item {}: {}", id, exception.getMessage());
             return inboxItemMapper.toResponse(savedItem);
+        }
+    }
+
+    /**
+     * Fire-and-forget capture: persists the raw item and returns the {@code PENDING_AI} snapshot
+     * immediately, running AI enrichment on a background thread. Used by the Telegram bot so the
+     * user gets an instant acknowledgement instead of waiting for OpenAI.
+     */
+    public InboxItemResponse captureAsync(CreateInboxItemRequest request) {
+        List<ExtractedLink> links = linkExtractor.extract(request.rawText());
+        InboxItem rawItem = buildRawItem(request, links);
+        InboxItem savedRaw = inboxItemRepository.save(rawItem);
+        InboxItemResponse snapshot = inboxItemMapper.toResponse(savedRaw);
+        selfProvider.getObject().scheduleProcessing(savedRaw.getId(), request);
+        return snapshot;
+    }
+
+    @Async
+    public void scheduleProcessing(UUID id, CreateInboxItemRequest request) {
+        try {
+            selfProvider.getObject().process(id, request);
+        } catch (RuntimeException exception) {
+            log.warn("Async inbox processing failed for {}: {}", id, exception.getMessage());
         }
     }
 

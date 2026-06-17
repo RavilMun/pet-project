@@ -19,7 +19,6 @@ import ru.ravil.petproject.domain.InboxItemType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
 import ru.ravil.petproject.dto.MemoryUnitResponse;
-import ru.ravil.petproject.service.AiProcessingUnavailableException;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
@@ -134,24 +133,20 @@ public class TelegramBotPollingService {
             return;
         }
 
-        try {
-            InboxItemResponse savedItem = inboxItemService.create(new CreateInboxItemRequest(
-                    normalizedText,
-                    null,
-                    null,
-                    null,
-                    InboxItemSource.TELEGRAM,
-                    null,
-                    null,
-                    chatId,
-                    message.messageId(),
-                    Set.of()
-            ));
+        InboxItemResponse savedItem = inboxItemService.captureAsync(new CreateInboxItemRequest(
+                normalizedText,
+                null,
+                null,
+                null,
+                InboxItemSource.TELEGRAM,
+                null,
+                null,
+                chatId,
+                message.messageId(),
+                Set.of()
+        ));
 
-            telegramApiClient.sendMessage(chatId, formatSavedItem(savedItem));
-        } catch (AiProcessingUnavailableException exception) {
-            telegramApiClient.sendMessage(chatId, "Не сохранил: AI-обработка сейчас недоступна. Попробуй позже.");
-        }
+        telegramApiClient.sendMessage(chatId, formatSavedItem(savedItem));
     }
 
     private TelegramIntent detectIntent(String text) {
@@ -312,7 +307,7 @@ public class TelegramBotPollingService {
     }
 
     private String formatSavedItem(InboxItemResponse item) {
-        StringBuilder builder = new StringBuilder("Сохранил: ")
+        StringBuilder builder = new StringBuilder("Сохранил, разберу позже: ")
                 .append(displayText(item))
                 .append("\nТип: ")
                 .append(item.type());

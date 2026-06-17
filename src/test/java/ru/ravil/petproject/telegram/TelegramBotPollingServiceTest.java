@@ -29,7 +29,6 @@ import ru.ravil.petproject.domain.MemoryUnitType;
 import ru.ravil.petproject.dto.CreateInboxItemRequest;
 import ru.ravil.petproject.dto.InboxItemResponse;
 import ru.ravil.petproject.dto.MemoryUnitResponse;
-import ru.ravil.petproject.service.AiProcessingUnavailableException;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
@@ -65,12 +64,12 @@ class TelegramBotPollingServiceTest {
         TelegramBotPollingService service = service(null);
         TelegramUpdate update = update(100, 42, "remember docs");
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update));
-        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response());
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response());
 
         service.poll();
 
         ArgumentCaptor<CreateInboxItemRequest> captor = ArgumentCaptor.forClass(CreateInboxItemRequest.class);
-        verify(inboxItemService).create(captor.capture());
+        verify(inboxItemService).captureAsync(captor.capture());
         CreateInboxItemRequest request = captor.getValue();
         org.assertj.core.api.Assertions.assertThat(request.rawText()).isEqualTo("remember docs");
         org.assertj.core.api.Assertions.assertThat(request.type()).isNull();
@@ -78,7 +77,7 @@ class TelegramBotPollingServiceTest {
         org.assertj.core.api.Assertions.assertThat(request.telegramChatId()).isEqualTo(42);
         org.assertj.core.api.Assertions.assertThat(request.telegramMessageId()).isEqualTo(1);
         org.assertj.core.api.Assertions.assertThat(request.tags()).isEmpty();
-        verify(telegramApiClient).sendMessage(42, "Сохранил: remember docs\nТип: NOTE");
+        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: remember docs\nТип: NOTE");
     }
 
     @Test
@@ -86,12 +85,12 @@ class TelegramBotPollingServiceTest {
         TelegramBotPollingService service = service(null);
         String text = "Вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search";
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, text)));
-        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response(text));
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response(text));
 
         service.poll();
 
         ArgumentCaptor<CreateInboxItemRequest> captor = ArgumentCaptor.forClass(CreateInboxItemRequest.class);
-        verify(inboxItemService).create(captor.capture());
+        verify(inboxItemService).captureAsync(captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().rawText()).isEqualTo(text);
         verify(inboxItemSearchService, never()).search(
                 org.mockito.ArgumentMatchers.anyString(),
@@ -100,7 +99,7 @@ class TelegramBotPollingServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
         );
-        verify(telegramApiClient).sendMessage(42, "Сохранил: " + text.substring(0, 77) + "...\nТип: NOTE");
+        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: " + text.substring(0, 77) + "...\nТип: NOTE");
     }
 
     @Test
@@ -108,12 +107,12 @@ class TelegramBotPollingServiceTest {
         TelegramBotPollingService service = service(null);
         String text = "Мой терапевт Иванова.";
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, text)));
-        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response("Мой терапевт Иванова"));
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response("Мой терапевт Иванова"));
 
         service.poll();
 
         ArgumentCaptor<CreateInboxItemRequest> captor = ArgumentCaptor.forClass(CreateInboxItemRequest.class);
-        verify(inboxItemService).create(captor.capture());
+        verify(inboxItemService).captureAsync(captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().rawText()).isEqualTo(text);
         verify(inboxItemSearchService, never()).search(
                 org.mockito.ArgumentMatchers.anyString(),
@@ -125,17 +124,16 @@ class TelegramBotPollingServiceTest {
     }
 
     @Test
-    void pollDoesNotSaveTextMessageWhenAiProcessingIsUnavailable() {
+    void pollAcknowledgesCaptureWhileAiProcessesInBackground() {
         TelegramBotPollingService service = service(null);
         TelegramUpdate update = update(100, 42, "remember docs");
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update));
-        when(inboxItemService.create(any(CreateInboxItemRequest.class)))
-                .thenThrow(new AiProcessingUnavailableException());
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response());
 
         service.poll();
 
-        verify(inboxItemService).create(any(CreateInboxItemRequest.class));
-        verify(telegramApiClient).sendMessage(42, "Не сохранил: AI-обработка сейчас недоступна. Попробуй позже.");
+        verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
+        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: remember docs\nТип: NOTE");
     }
 
     @Test
@@ -238,7 +236,7 @@ class TelegramBotPollingServiceTest {
     void commandOnlyModeSavesNaturalLanguageSearchAsNote() {
         TelegramBotPollingService service = service(null, TelegramIntentMode.COMMAND_ONLY);
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "найди pgvector")));
-        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response("найди pgvector"));
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response("найди pgvector"));
 
         service.poll();
 
@@ -250,8 +248,8 @@ class TelegramBotPollingServiceTest {
                 org.mockito.ArgumentMatchers.any()
         );
         verify(aiTelegramIntentDetector, never()).detect(anyString());
-        verify(inboxItemService).create(any(CreateInboxItemRequest.class));
-        verify(telegramApiClient).sendMessage(42, "Сохранил: найди pgvector\nТип: NOTE");
+        verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
+        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: найди pgvector\nТип: NOTE");
     }
 
     @Test
@@ -319,12 +317,12 @@ class TelegramBotPollingServiceTest {
         String text = "Вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search";
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, text)));
         when(aiTelegramIntentDetector.detectAny(text)).thenReturn(TelegramIntent.capture());
-        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response(text));
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response(text));
 
         service.poll();
 
         verify(aiTelegramIntentDetector).detectAny(text);
-        verify(inboxItemService).create(any(CreateInboxItemRequest.class));
+        verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
         verify(inboxItemSearchService, never()).search(
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anySet(),
@@ -392,14 +390,14 @@ class TelegramBotPollingServiceTest {
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "напомни оплатить интернет завтра")));
         when(aiTelegramIntentDetector.detect("напомни оплатить интернет завтра"))
                 .thenReturn(TelegramIntent.capture());
-        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response("напомни оплатить интернет завтра"));
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response("напомни оплатить интернет завтра"));
 
         service.poll();
 
         verify(aiTelegramIntentDetector).detect("напомни оплатить интернет завтра");
-        verify(inboxItemService).create(any(CreateInboxItemRequest.class));
+        verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
         verify(inboxItemSearchService, never()).search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
-        verify(telegramApiClient).sendMessage(42, "Сохранил: напомни оплатить интернет завтра\nТип: NOTE");
+        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: напомни оплатить интернет завтра\nТип: NOTE");
     }
 
     @Test
@@ -432,13 +430,13 @@ class TelegramBotPollingServiceTest {
     void pollSavesEmptySearchCommandAsNote() {
         TelegramBotPollingService service = service(null);
         when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "/search")));
-        when(inboxItemService.create(any(CreateInboxItemRequest.class))).thenReturn(response("/search"));
+        when(inboxItemService.captureAsync(any(CreateInboxItemRequest.class))).thenReturn(response("/search"));
 
         service.poll();
 
         verify(inboxItemSearchService, never()).search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
-        verify(inboxItemService).create(any(CreateInboxItemRequest.class));
-        verify(telegramApiClient).sendMessage(42, "Сохранил: /search\nТип: NOTE");
+        verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
+        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: /search\nТип: NOTE");
     }
 
     @Test
