@@ -6,8 +6,10 @@ name: memory-eval
 # The cheap, deterministic ranking guard runs in the normal `test` task instead, on every build.
 
 on:
-  schedule:
-    - cron: "0 3 * * *"   # 03:00 UTC nightly
+  # Nightly schedule is disabled for now — re-enable when there are real users by
+  # uncommenting the two lines below.
+  # schedule:
+  #   - cron: "0 3 * * *"   # 03:00 UTC nightly
   workflow_dispatch:
     inputs:
       databaseMode:
