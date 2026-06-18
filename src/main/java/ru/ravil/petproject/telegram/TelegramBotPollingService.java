@@ -1,11 +1,13 @@
 package ru.ravil.petproject.telegram;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -36,6 +38,7 @@ import ru.ravil.petproject.service.MemoryDeduplicationService;
 import ru.ravil.petproject.service.MemoryEditService;
 import ru.ravil.petproject.service.MemoryTaskService;
 import ru.ravil.petproject.service.OpenTask;
+import ru.ravil.petproject.service.SearchPeriod;
 
 @Service
 @ConditionalOnProperty(prefix = "telegram.bot", name = "enabled", havingValue = "true")
@@ -58,10 +61,12 @@ public class TelegramBotPollingService {
     private final MemoryDeduplicationService deduplicationService;
     private final TelegramImageIngestionService imageIngestionService;
     private final TelegramVoiceIngestionService voiceIngestionService;
+    private final TelegramActionDetector actionDetector;
     private final AtomicBoolean polling = new AtomicBoolean(false);
     private final AtomicLong nextOffset = new AtomicLong(0);
     private final Map<Long, List<OpenTask>> lastListedTasks = new ConcurrentHashMap<>();
     private final Map<Long, List<MemoryUnitResponse>> lastListedMemories = new ConcurrentHashMap<>();
+    private final Map<Long, PendingAction> pendingActions = new ConcurrentHashMap<>();
 
     public TelegramBotPollingService(
             TelegramApiClient telegramApiClient,
@@ -78,7 +83,8 @@ public class TelegramBotPollingService {
             MemoryEditService memoryEditService,
             MemoryDeduplicationService deduplicationService,
             TelegramImageIngestionService imageIngestionService,
-            TelegramVoiceIngestionService voiceIngestionService
+            TelegramVoiceIngestionService voiceIngestionService,
+            TelegramActionDetector actionDetector
     ) {
         this.telegramApiClient = telegramApiClient;
         this.properties = properties;
@@ -95,6 +101,7 @@ public class TelegramBotPollingService {
         this.deduplicationService = deduplicationService;
         this.imageIngestionService = imageIngestionService;
         this.voiceIngestionService = voiceIngestionService;
+        this.actionDetector = actionDetector;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -198,6 +205,10 @@ public class TelegramBotPollingService {
         }
         if (normalizedText.equals("/duplicates")) {
             handleDuplicates(chatId);
+            return;
+        }
+
+        if (handleConversational(chatId, normalizedText)) {
             return;
         }
 
@@ -433,6 +444,176 @@ public class TelegramBotPollingService {
                 chatId,
                 snoozed ? "Отложил: " + taskTitle(task) + " на " + parts[1] : "Не удалось отложить задачу."
         );
+    }
+
+    private static final Set<String> YES_WORDS = Set.of("да", "ага", "угу", "ок", "окей", "yes", "y", "давай", "верно", "точно");
+    private static final Set<String> NO_WORDS = Set.of("нет", "не", "no", "n", "отмена", "отмени", "не надо", "отбой");
+
+    /**
+     * Conversational layer (Phase 9.2/9.3): first resolves any pending confirmation/disambiguation,
+     * then tries to interpret the message as a natural-language action ("закрой задачу про …",
+     * "забудь про …"). Returns true if it handled the message; false to fall through to search/capture.
+     */
+    private boolean handleConversational(long chatId, String text) {
+        PendingAction pending = pendingActions.get(chatId);
+        if (pending != null) {
+            String reply = text.trim().toLowerCase(Locale.ROOT);
+            if (NO_WORDS.contains(reply)) {
+                pendingActions.remove(chatId);
+                telegramApiClient.sendMessage(chatId, "Ок, отменил.");
+                return true;
+            }
+            if (YES_WORDS.contains(reply) && pending.candidates().size() == 1) {
+                pendingActions.remove(chatId);
+                executeOnTarget(chatId, pending, pending.candidates().getFirst());
+                return true;
+            }
+            Integer index = parsePositiveInt(reply);
+            if (index != null && index >= 1 && index <= pending.candidates().size()) {
+                pendingActions.remove(chatId);
+                executeOnTarget(chatId, pending, pending.candidates().get(index - 1));
+                return true;
+            }
+            // Not an answer to the pending question — discard it and treat as a fresh message.
+            pendingActions.remove(chatId);
+        }
+
+        TelegramAction action = actionDetector.detect(text);
+        if (!action.isActionable()) {
+            return false;
+        }
+        handleAction(chatId, action);
+        return true;
+    }
+
+    private void handleAction(long chatId, TelegramAction action) {
+        switch (action.type()) {
+            case COMPLETE, SNOOZE -> handleTaskAction(chatId, action);
+            case FORGET, EDIT -> handleMemoryAction(chatId, action);
+            default -> { }
+        }
+    }
+
+    private void handleTaskAction(long chatId, TelegramAction action) {
+        List<OpenTask> matched = matchTasks(memoryTaskService.listOpenTasks(chatId, 20), action.target());
+        if (matched.isEmpty()) {
+            telegramApiClient.sendMessage(chatId, "Не нашёл задачу про «" + action.target() + "». Покажи список: /tasks");
+            return;
+        }
+        if (matched.size() == 1) {
+            OpenTask task = matched.getFirst();
+            executeOnTarget(chatId,
+                    new PendingAction(action.type(), List.of(new PendingTarget(task.id(), taskTitle(task))), action.param()),
+                    new PendingTarget(task.id(), taskTitle(task)));
+            return;
+        }
+        List<PendingTarget> candidates = matched.stream().map(t -> new PendingTarget(t.id(), taskTitle(t))).toList();
+        pendingActions.put(chatId, new PendingAction(action.type(), candidates, action.param()));
+        telegramApiClient.sendMessage(chatId, disambiguation("Несколько задач — какую?", candidates));
+    }
+
+    private void handleMemoryAction(long chatId, TelegramAction action) {
+        List<MemoryUnitResponse> found = dedupeByMessage(
+                inboxItemSearchService.search(action.target(), Set.of(), Set.of(), SearchPeriod.ALL, 5));
+        if (found.isEmpty()) {
+            telegramApiClient.sendMessage(chatId, "Не нашёл запись про «" + action.target() + "».");
+            return;
+        }
+        if (found.size() == 1) {
+            MemoryUnitResponse memory = found.getFirst();
+            PendingTarget target = new PendingTarget(memory.id(), memoryTitle(memory));
+            if (action.type() == TelegramActionType.FORGET) {
+                // destructive → confirm first
+                pendingActions.put(chatId, new PendingAction(TelegramActionType.FORGET, List.of(target), null));
+                telegramApiClient.sendMessage(chatId, "Забыть «" + target.title() + "»? да / нет");
+            } else {
+                executeOnTarget(chatId, new PendingAction(TelegramActionType.EDIT, List.of(target), action.param()), target);
+            }
+            return;
+        }
+        List<PendingTarget> candidates = found.stream().map(m -> new PendingTarget(m.id(), memoryTitle(m))).toList();
+        pendingActions.put(chatId, new PendingAction(action.type(), candidates, action.param()));
+        String header = action.type() == TelegramActionType.FORGET
+                ? "Несколько записей — какую забыть?" : "Несколько записей — какую исправить?";
+        telegramApiClient.sendMessage(chatId, disambiguation(header, candidates));
+    }
+
+    private void executeOnTarget(long chatId, PendingAction pending, PendingTarget target) {
+        switch (pending.type()) {
+            case COMPLETE -> {
+                memoryTaskService.completeTask(target.id());
+                telegramApiClient.sendMessage(chatId, "Готово: " + target.title());
+            }
+            case SNOOZE -> {
+                Duration delay = parseDuration(pending.param() == null ? "" : pending.param());
+                if (delay == null) {
+                    telegramApiClient.sendMessage(chatId, "На сколько отложить «" + target.title() + "»? напр. 2h, 1d");
+                } else {
+                    memoryTaskService.snoozeTask(target.id(), delay);
+                    telegramApiClient.sendMessage(chatId, "Отложил: " + target.title() + " на " + pending.param());
+                }
+            }
+            case FORGET -> {
+                memoryEditService.forget(target.id());
+                telegramApiClient.sendMessage(chatId, "Забыл: " + target.title());
+            }
+            case EDIT -> {
+                if (!StringUtils.hasText(pending.param())) {
+                    telegramApiClient.sendMessage(chatId, "Что записать вместо «" + target.title() + "»?");
+                } else {
+                    memoryEditService.edit(target.id(), pending.param()).ifPresentOrElse(
+                            updated -> telegramApiClient.sendMessage(chatId, "Обновил: " + memoryTitle(updated)),
+                            () -> telegramApiClient.sendMessage(chatId, "Не удалось обновить запись."));
+                }
+            }
+            default -> { }
+        }
+    }
+
+    private List<OpenTask> matchTasks(List<OpenTask> tasks, String target) {
+        Set<String> targetTokens = actionTokens(target);
+        if (targetTokens.isEmpty()) {
+            return List.of();
+        }
+        return tasks.stream()
+                .map(task -> Map.entry(task, overlap(targetTokens, task.title())))
+                .filter(entry -> entry.getValue() > 0)
+                .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                .map(Map.Entry::getKey)
+                .limit(5)
+                .toList();
+    }
+
+    private int overlap(Set<String> targetTokens, String title) {
+        String haystack = title == null ? "" : title.toLowerCase(Locale.ROOT);
+        return (int) targetTokens.stream().filter(haystack::contains).count();
+    }
+
+    private Set<String> actionTokens(String target) {
+        if (!StringUtils.hasText(target)) {
+            return Set.of();
+        }
+        return java.util.Arrays.stream(target.toLowerCase(Locale.ROOT).split("[^\\p{IsAlphabetic}\\p{IsDigit}]+"))
+                .filter(token -> token.length() >= 3)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private List<MemoryUnitResponse> dedupeByMessage(List<MemoryUnitResponse> items) {
+        LinkedHashMap<UUID, MemoryUnitResponse> byMessage = new LinkedHashMap<>();
+        for (MemoryUnitResponse item : items) {
+            UUID key = item.inboxItemId() != null ? item.inboxItemId() : item.id();
+            byMessage.putIfAbsent(key, item);
+        }
+        return List.copyOf(byMessage.values());
+    }
+
+    private String disambiguation(String header, List<PendingTarget> candidates) {
+        StringBuilder builder = new StringBuilder(header);
+        for (int i = 0; i < candidates.size(); i++) {
+            builder.append("\n").append(i + 1).append(") ").append(candidates.get(i).title());
+        }
+        builder.append("\n(ответь номером)");
+        return builder.toString();
     }
 
     private void handleForget(long chatId, String command) {

@@ -53,6 +53,7 @@ class TelegramBotPollingServiceTest {
     private MemoryDeduplicationService deduplicationService;
     private TelegramImageIngestionService imageIngestionService;
     private TelegramVoiceIngestionService voiceIngestionService;
+    private TelegramActionDetector actionDetector;
     private AiTelegramIntentDetector aiTelegramIntentDetector;
 
     @BeforeEach
@@ -67,6 +68,8 @@ class TelegramBotPollingServiceTest {
         deduplicationService = Mockito.mock(MemoryDeduplicationService.class);
         imageIngestionService = Mockito.mock(TelegramImageIngestionService.class);
         voiceIngestionService = Mockito.mock(TelegramVoiceIngestionService.class);
+        actionDetector = Mockito.mock(TelegramActionDetector.class);
+        when(actionDetector.detect(anyString())).thenReturn(TelegramAction.none());
         aiTelegramIntentDetector = Mockito.mock(AiTelegramIntentDetector.class);
         when(aiTelegramIntentDetector.detect(anyString())).thenReturn(TelegramIntent.unknown());
         when(aiTelegramIntentDetector.detectAny(anyString())).thenReturn(TelegramIntent.unknown());
@@ -631,6 +634,41 @@ class TelegramBotPollingServiceTest {
         verify(telegramApiClient).sendMessage(42, "Не нашёл запись под этим номером. Сначала найди, например: найди кресло");
     }
 
+    @Test
+    void completesTaskByNaturalLanguage() {
+        TelegramBotPollingService service = service(null);
+        UUID taskId = UUID.fromString("33333333-3333-3333-3333-333333333333");
+        when(actionDetector.detect("закрой задачу про интернет"))
+                .thenReturn(new TelegramAction(TelegramActionType.COMPLETE, "интернет", ""));
+        when(memoryTaskService.listOpenTasks(42L, 20))
+                .thenReturn(List.of(new OpenTask(taskId, "Оплатить интернет", null)));
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "закрой задачу про интернет")));
+
+        service.poll();
+
+        verify(memoryTaskService).completeTask(taskId);
+        verify(telegramApiClient).sendMessage(42, "Готово: Оплатить интернет");
+    }
+
+    @Test
+    void forgetsMemoryByNaturalLanguageAfterConfirmation() {
+        TelegramBotPollingService service = service(null);
+        MemoryUnitResponse memory = memoryResponse("Кофе в Surf на Невском");
+        when(actionDetector.detect("забудь про кафе на невском"))
+                .thenReturn(new TelegramAction(TelegramActionType.FORGET, "кафе на невском", ""));
+        when(inboxItemSearchService.search("кафе на невском", Set.of(), Set.of(), SearchPeriod.ALL, 5))
+                .thenReturn(List.of(memory));
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(
+                update(100, 42, "забудь про кафе на невском"),
+                update(101, 42, "да")));
+
+        service.poll();
+
+        verify(telegramApiClient).sendMessage(42, "Забыть «Кофе в Surf на Невском»? да / нет");
+        verify(memoryEditService).forget(memory.id());
+        verify(telegramApiClient).sendMessage(42, "Забыл: Кофе в Surf на Невском");
+    }
+
     private TelegramBotPollingService service(Long allowedChatId) {
         return service(allowedChatId, TelegramIntentMode.HYBRID_SAFE);
     }
@@ -654,7 +692,8 @@ class TelegramBotPollingServiceTest {
                 memoryEditService,
                 deduplicationService,
                 imageIngestionService,
-                voiceIngestionService
+                voiceIngestionService,
+                actionDetector
         );
     }
 

@@ -82,6 +82,7 @@ Given a query that looks like a question (ends in `?` or starts with a Russian q
 `TelegramBotPollingService` polls `getUpdates` on a fixed schedule (only active when `telegram.bot.enabled=true`) and restricts to `telegram.bot.allowed-chat-id`. Intent detection is layered, controlled by `telegram.bot.intent-mode` (`TelegramIntentMode`):
 - `CommandTelegramIntentDetector` always runs first (slash-style commands).
 - `COMMAND_ONLY`: nothing else.
+- **Natural-language actions** (Phase 9.2/9.3) run before search/capture: `TelegramActionDetector` (AI, gated by an action-verb prefix heuristic) parses "закрой задачу про…/забудь про…/отложи…/исправь…" into `COMPLETE/SNOOZE/FORGET/EDIT` + a free-form `target` + `param`. The target is resolved by description (token overlap vs open tasks; `search(target)` vs memories) — no indices. A per-chat `pendingActions` map drives confirmation (FORGET → "да/нет") and disambiguation (multiple matches → numbered "какую?" → reply with a number); the slash commands (`/done`, `/forget`, …) remain as the exact fallback.
 - `HYBRID_SAFE` (default): `AiTelegramIntentDetector` runs first only for ambiguous-looking text (`shouldUseAiForIntent`), else `RuleBasedTelegramIntentDetector` runs first and falls back to AI.
 - `AI_FIRST`: AI detector tries everything first, rule-based is the fallback.
 
