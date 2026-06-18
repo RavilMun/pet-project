@@ -596,3 +596,14 @@ databaseChangeLog:
               - column:
                   name: media_type
                   type: varchar(64)
+
+  - changeSet:
+      id: 014-add-memory-unit-forgotten-at
+      author: codex
+      changes:
+        - addColumn:
+            tableName: memory_units
+            columns:
+              - column:
+                  name: forgotten_at
+                  type: timestamp with time zone

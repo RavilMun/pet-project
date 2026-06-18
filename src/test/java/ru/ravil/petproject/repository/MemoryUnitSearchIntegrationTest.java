@@ -150,6 +150,33 @@ class MemoryUnitSearchIntegrationTest {
     }
 
     @Test
+    void forgottenUnitsAreExcludedFromSearchAndListingAndRestoredOnRecall() {
+        MemoryUnit kafka = unit("Посмотреть доклад про Kafka", "Доклад про Kafka", MemoryUnitType.LEARNING, Set.of("kafka"));
+
+        assertThat(searchKafka()).extracting(MemoryUnit::getId).contains(kafka.getId());
+        assertThat(memoryUnitRepository.findAllBySourceCreatedAtDesc(PageRequest.of(0, 10)))
+                .extracting(MemoryUnit::getId).contains(kafka.getId());
+
+        assertThat(memoryUnitRepository.markForgotten(kafka.getId(), OffsetDateTime.now())).isEqualTo(1);
+
+        assertThat(searchKafka()).extracting(MemoryUnit::getId).doesNotContain(kafka.getId());
+        assertThat(memoryUnitRepository.findAllBySourceCreatedAtDesc(PageRequest.of(0, 10)))
+                .extracting(MemoryUnit::getId).doesNotContain(kafka.getId());
+
+        assertThat(memoryUnitRepository.unforget(kafka.getId())).isEqualTo(1);
+        assertThat(searchKafka()).extracting(MemoryUnit::getId).contains(kafka.getId());
+    }
+
+    private List<MemoryUnit> searchKafka() {
+        return memoryUnitRepository.searchAdvanced(
+                        "kafka", true, "", false, "", false,
+                        Set.of("__no_types__"), false, Set.of("__no_tags__"), false,
+                        PageRequest.of(0, 10))
+                .stream()
+                .toList();
+    }
+
+    @Test
     void periodFilterPrefersOccurredAtOverCreatedAt() {
         // All three rows are created "today" (auto @PrePersist). occurred_at is what should decide
         // membership in the TODAY period — a yesterday event recorded today must NOT match.

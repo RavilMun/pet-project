@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,7 +29,9 @@ import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
+import ru.ravil.petproject.service.MemoryAnswer;
 import ru.ravil.petproject.service.MemoryAnswerService;
+import ru.ravil.petproject.service.MemoryEditService;
 import ru.ravil.petproject.service.MemoryTaskService;
 import ru.ravil.petproject.service.OpenTask;
 
@@ -49,10 +52,12 @@ public class TelegramBotPollingService {
     private final InboxItemEmbeddingBackfillService embeddingBackfillService;
     private final MemoryAnswerService memoryAnswerService;
     private final MemoryTaskService memoryTaskService;
+    private final MemoryEditService memoryEditService;
     private final TelegramImageIngestionService imageIngestionService;
     private final AtomicBoolean polling = new AtomicBoolean(false);
     private final AtomicLong nextOffset = new AtomicLong(0);
     private final Map<Long, List<OpenTask>> lastListedTasks = new ConcurrentHashMap<>();
+    private final Map<Long, List<MemoryUnitResponse>> lastListedMemories = new ConcurrentHashMap<>();
 
     public TelegramBotPollingService(
             TelegramApiClient telegramApiClient,
@@ -66,6 +71,7 @@ public class TelegramBotPollingService {
             InboxItemEmbeddingBackfillService embeddingBackfillService,
             MemoryAnswerService memoryAnswerService,
             MemoryTaskService memoryTaskService,
+            MemoryEditService memoryEditService,
             TelegramImageIngestionService imageIngestionService
     ) {
         this.telegramApiClient = telegramApiClient;
@@ -79,6 +85,7 @@ public class TelegramBotPollingService {
         this.embeddingBackfillService = embeddingBackfillService;
         this.memoryAnswerService = memoryAnswerService;
         this.memoryTaskService = memoryTaskService;
+        this.memoryEditService = memoryEditService;
         this.imageIngestionService = imageIngestionService;
     }
 
@@ -159,6 +166,14 @@ public class TelegramBotPollingService {
         }
         if (normalizedText.equals("/snooze") || normalizedText.startsWith("/snooze ")) {
             handleSnooze(chatId, normalizedText);
+            return;
+        }
+        if (normalizedText.equals("/forget") || normalizedText.startsWith("/forget ")) {
+            handleForget(chatId, normalizedText);
+            return;
+        }
+        if (normalizedText.equals("/edit") || normalizedText.startsWith("/edit ")) {
+            handleEdit(chatId, normalizedText);
             return;
         }
 
@@ -242,14 +257,16 @@ public class TelegramBotPollingService {
                         intent.period(),
                         10
                 );
+                Optional<MemoryAnswer> answer = memoryAnswerService.answer(originalText, items);
                 telegramApiClient.sendMessage(
                         chatId,
                         searchResponseFormatter.format(
                                 StringUtils.hasText(intent.query()) ? intent.query() : originalText,
                                 items,
-                                memoryAnswerService.answer(originalText, items)
+                                answer
                         )
                 );
+                rememberListedMemories(chatId, items, answer);
                 resendPhotos(chatId, items);
                 yield true;
             }
@@ -378,6 +395,67 @@ public class TelegramBotPollingService {
                 chatId,
                 snoozed ? "Отложил: " + taskTitle(task) + " на " + parts[1] : "Не удалось отложить задачу."
         );
+    }
+
+    private void handleForget(long chatId, String command) {
+        String argument = command.substring("/forget".length()).trim();
+        MemoryUnitResponse memory = resolveListedMemory(chatId, argument);
+        if (memory == null) {
+            telegramApiClient.sendMessage(chatId, "Не нашёл запись под этим номером. Сначала найди, например: найди кресло");
+            return;
+        }
+        boolean forgotten = memoryEditService.forget(memory.id());
+        telegramApiClient.sendMessage(
+                chatId,
+                forgotten ? "Забыл: " + memoryTitle(memory) : "Не удалось забыть (возможно, уже забыто)."
+        );
+    }
+
+    private void handleEdit(long chatId, String command) {
+        String argument = command.substring("/edit".length()).trim();
+        String[] parts = argument.split("\\s+", 2);
+        if (parts.length < 2 || !StringUtils.hasText(parts[1])) {
+            telegramApiClient.sendMessage(chatId, "Формат: /edit <номер> <новый текст>");
+            return;
+        }
+        MemoryUnitResponse memory = resolveListedMemory(chatId, parts[0]);
+        if (memory == null) {
+            telegramApiClient.sendMessage(chatId, "Не нашёл запись под этим номером. Сначала найди, например: найди кресло");
+            return;
+        }
+        memoryEditService.edit(memory.id(), parts[1])
+                .ifPresentOrElse(
+                        updated -> telegramApiClient.sendMessage(chatId, "Обновил: " + memoryTitle(updated)),
+                        () -> telegramApiClient.sendMessage(chatId, "Не удалось обновить запись.")
+                );
+    }
+
+    private void rememberListedMemories(long chatId, List<MemoryUnitResponse> items, Optional<MemoryAnswer> answer) {
+        // Mirror what the formatter actually numbers: cited sources when an answer is shown, else all items.
+        List<MemoryUnitResponse> shown = answer.isPresent() && answer.get().hasText() && !answer.get().sources().isEmpty()
+                ? answer.get().sources()
+                : items;
+        lastListedMemories.put(chatId, shown);
+    }
+
+    private MemoryUnitResponse resolveListedMemory(long chatId, String indexText) {
+        List<MemoryUnitResponse> memories = lastListedMemories.get(chatId);
+        if (memories == null || memories.isEmpty() || !StringUtils.hasText(indexText)) {
+            return null;
+        }
+        Integer index = parsePositiveInt(indexText);
+        if (index == null || index < 1 || index > memories.size()) {
+            return null;
+        }
+        return memories.get(index - 1);
+    }
+
+    private String memoryTitle(MemoryUnitResponse memory) {
+        String title = StringUtils.hasText(memory.title()) ? memory.title() : memory.sourceRawText();
+        if (!StringUtils.hasText(title)) {
+            return "(без названия)";
+        }
+        return title.length() <= 80 ? title : title.substring(0, 77) + "...";
     }
 
     private OpenTask resolveListedTask(long chatId, String indexText) {

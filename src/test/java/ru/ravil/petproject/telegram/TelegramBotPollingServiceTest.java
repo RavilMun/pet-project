@@ -34,6 +34,7 @@ import ru.ravil.petproject.service.InboxItemService;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.MemoryAnswer;
 import ru.ravil.petproject.service.MemoryAnswerService;
+import ru.ravil.petproject.service.MemoryEditService;
 import ru.ravil.petproject.service.MemoryTaskService;
 import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
 import ru.ravil.petproject.service.OpenTask;
@@ -47,6 +48,7 @@ class TelegramBotPollingServiceTest {
     private InboxItemEmbeddingBackfillService embeddingBackfillService;
     private MemoryAnswerService memoryAnswerService;
     private MemoryTaskService memoryTaskService;
+    private MemoryEditService memoryEditService;
     private TelegramImageIngestionService imageIngestionService;
     private AiTelegramIntentDetector aiTelegramIntentDetector;
 
@@ -58,6 +60,7 @@ class TelegramBotPollingServiceTest {
         embeddingBackfillService = Mockito.mock(InboxItemEmbeddingBackfillService.class);
         memoryAnswerService = Mockito.mock(MemoryAnswerService.class);
         memoryTaskService = Mockito.mock(MemoryTaskService.class);
+        memoryEditService = Mockito.mock(MemoryEditService.class);
         imageIngestionService = Mockito.mock(TelegramImageIngestionService.class);
         aiTelegramIntentDetector = Mockito.mock(AiTelegramIntentDetector.class);
         when(aiTelegramIntentDetector.detect(anyString())).thenReturn(TelegramIntent.unknown());
@@ -557,6 +560,50 @@ class TelegramBotPollingServiceTest {
         verify(inboxItemService, never()).captureAsync(any(CreateInboxItemRequest.class));
     }
 
+    @Test
+    void pollForgetsMemoryFromLastSearchList() {
+        TelegramBotPollingService service = service(null);
+        MemoryUnitResponse memory = memoryResponse("learn pgvector");
+        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10))
+                .thenReturn(List.of(memory));
+        when(memoryEditService.forget(memory.id())).thenReturn(true);
+        when(telegramApiClient.getUpdates(0, 20))
+                .thenReturn(List.of(update(100, 42, "найди pgvector"), update(101, 42, "/forget 1")));
+
+        service.poll();
+
+        verify(memoryEditService).forget(memory.id());
+        verify(telegramApiClient).sendMessage(42, "Забыл: learn pgvector");
+    }
+
+    @Test
+    void pollEditsMemoryFromLastSearchList() {
+        TelegramBotPollingService service = service(null);
+        MemoryUnitResponse memory = memoryResponse("learn pgvector");
+        when(inboxItemSearchService.search("pgvector", Set.of(), Set.of(), SearchPeriod.ALL, 10))
+                .thenReturn(List.of(memory));
+        when(memoryEditService.edit(memory.id(), "учить pgvector внимательно"))
+                .thenReturn(Optional.of(memoryResponse("учить pgvector внимательно")));
+        when(telegramApiClient.getUpdates(0, 20))
+                .thenReturn(List.of(update(100, 42, "найди pgvector"), update(101, 42, "/edit 1 учить pgvector внимательно")));
+
+        service.poll();
+
+        verify(memoryEditService).edit(memory.id(), "учить pgvector внимательно");
+        verify(telegramApiClient).sendMessage(42, "Обновил: учить pgvector внимательно");
+    }
+
+    @Test
+    void pollRejectsForgetWithoutPriorSearch() {
+        TelegramBotPollingService service = service(null);
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update(100, 42, "/forget 1")));
+
+        service.poll();
+
+        verify(memoryEditService, never()).forget(any());
+        verify(telegramApiClient).sendMessage(42, "Не нашёл запись под этим номером. Сначала найди, например: найди кресло");
+    }
+
     private TelegramBotPollingService service(Long allowedChatId) {
         return service(allowedChatId, TelegramIntentMode.HYBRID_SAFE);
     }
@@ -577,6 +624,7 @@ class TelegramBotPollingServiceTest {
                 embeddingBackfillService,
                 memoryAnswerService,
                 memoryTaskService,
+                memoryEditService,
                 imageIngestionService
         );
     }

@@ -19,6 +19,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
             select unit
             from MemoryUnit unit
             join fetch unit.item item
+            where unit.forgottenAt is null
             order by item.createdAt desc, unit.createdAt asc
             """)
     List<MemoryUnit> findAllBySourceCreatedAtDesc(Pageable pageable);
@@ -32,6 +33,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
               and unit.dueAt <= :now
               and unit.remindedAt is null
               and unit.completedAt is null
+              and unit.forgottenAt is null
               and item.telegramChatId is not null
             order by unit.dueAt asc
             """)
@@ -52,6 +54,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
             join fetch unit.item item
             where unit.type in :types
               and unit.completedAt is null
+              and unit.forgottenAt is null
               and item.telegramChatId = :chatId
             order by case when unit.dueAt is null then 1 else 0 end, unit.dueAt asc, unit.createdAt asc
             """)
@@ -71,12 +74,23 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
     @Query("update MemoryUnit unit set unit.dueAt = :dueAt, unit.remindedAt = null where unit.id = :id")
     int snoozeDueAt(@Param("id") UUID id, @Param("dueAt") OffsetDateTime dueAt);
 
+    @Modifying
+    @Transactional
+    @Query("update MemoryUnit unit set unit.forgottenAt = :forgottenAt where unit.id = :id and unit.forgottenAt is null")
+    int markForgotten(@Param("id") UUID id, @Param("forgottenAt") OffsetDateTime forgottenAt);
+
+    @Modifying
+    @Transactional
+    @Query("update MemoryUnit unit set unit.forgottenAt = null where unit.id = :id and unit.forgottenAt is not null")
+    int unforget(@Param("id") UUID id);
+
     @Query("""
             select unit
             from MemoryUnit unit
             join fetch unit.item item
-            where (unit.occurredAt is not null and unit.occurredAt >= :start and unit.occurredAt < :end)
-               or (unit.occurredAt is null and item.createdAt >= :start and item.createdAt < :end)
+            where ((unit.occurredAt is not null and unit.occurredAt >= :start and unit.occurredAt < :end)
+                or (unit.occurredAt is null and item.createdAt >= :start and item.createdAt < :end))
+              and unit.forgottenAt is null
             order by item.createdAt desc, unit.createdAt asc
             """)
     List<MemoryUnit> findBySourceCreatedAtBetween(
@@ -90,7 +104,8 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     select unit.*
                     from memory_units unit
                     join inbox_items item on item.id = unit.inbox_item_id
-                    where (:hasTypes = false or unit.type in (:types))
+                    where unit.forgotten_at is null
+                      and (:hasTypes = false or unit.type in (:types))
                       and (
                         (:hasQuery = false and :hasRelaxedQuery = false and :hasTags = false)
                         or (:hasQuery = true and (
@@ -200,7 +215,8 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     select count(unit.id)
                     from memory_units unit
                     join inbox_items item on item.id = unit.inbox_item_id
-                    where (:hasTypes = false or unit.type in (:types))
+                    where unit.forgotten_at is null
+                      and (:hasTypes = false or unit.type in (:types))
                       and (
                         (:hasQuery = false and :hasRelaxedQuery = false and :hasTags = false)
                         or (:hasQuery = true and (
@@ -289,6 +305,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     join inbox_items item on item.id = unit.inbox_item_id
                     where ((unit.occurred_at is not null and unit.occurred_at >= :start and unit.occurred_at < :end)
                            or (unit.occurred_at is null and item.created_at >= :start and item.created_at < :end))
+                      and unit.forgotten_at is null
                       and (:hasTypes = false or unit.type in (:types))
                       and (
                         (:hasQuery = false and :hasRelaxedQuery = false and :hasTags = false)
@@ -362,6 +379,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     join inbox_items item on item.id = unit.inbox_item_id
                     where ((unit.occurred_at is not null and unit.occurred_at >= :start and unit.occurred_at < :end)
                            or (unit.occurred_at is null and item.created_at >= :start and item.created_at < :end))
+                      and unit.forgotten_at is null
                       and (:hasTypes = false or unit.type in (:types))
                       and (
                         (:hasQuery = false and :hasRelaxedQuery = false and :hasTags = false)
@@ -495,6 +513,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     from memory_units unit
                     join inbox_items item on item.id = unit.inbox_item_id
                     where unit.embedding is not null
+                      and unit.forgotten_at is null
                       and (:hasTypes = false or unit.type in (:types))
                     order by unit.embedding <=> cast(:embedding as vector), item.created_at desc
                     """,
@@ -513,6 +532,7 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
                     from memory_units unit
                     join inbox_items item on item.id = unit.inbox_item_id
                     where unit.embedding is not null
+                      and unit.forgotten_at is null
                       and ((unit.occurred_at is not null and unit.occurred_at >= :start and unit.occurred_at < :end)
                            or (unit.occurred_at is null and item.created_at >= :start and item.created_at < :end))
                       and (:hasTypes = false or unit.type in (:types))
