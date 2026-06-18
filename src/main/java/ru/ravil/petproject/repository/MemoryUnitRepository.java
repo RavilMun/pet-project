@@ -74,6 +74,27 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
     @Query("update MemoryUnit unit set unit.dueAt = :dueAt, unit.remindedAt = null where unit.id = :id")
     int snoozeDueAt(@Param("id") UUID id, @Param("dueAt") OffsetDateTime dueAt);
 
+    @Query(
+            value = """
+                    select a.id as unitAId, b.id as unitBId, (a.embedding <=> b.embedding) as distance
+                    from memory_units a
+                    join memory_units b
+                      on b.id > a.id
+                     and a.inbox_item_id <> b.inbox_item_id
+                    where a.embedding is not null
+                      and b.embedding is not null
+                      and a.forgotten_at is null
+                      and b.forgotten_at is null
+                      and (a.embedding <=> b.embedding) <= :maxDistance
+                    order by (a.embedding <=> b.embedding) asc
+                    """,
+            nativeQuery = true
+    )
+    List<DuplicatePairProjection> findDuplicatePairs(
+            @Param("maxDistance") double maxDistance,
+            Pageable pageable
+    );
+
     @Modifying
     @Transactional
     @Query("update MemoryUnit unit set unit.forgottenAt = :forgottenAt where unit.id = :id and unit.forgottenAt is null")

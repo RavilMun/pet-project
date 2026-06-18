@@ -29,8 +29,10 @@ import ru.ravil.petproject.dto.MemoryUnitResponse;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.InboxItemSearchService;
 import ru.ravil.petproject.service.InboxItemService;
+import ru.ravil.petproject.dto.DuplicatePairResponse;
 import ru.ravil.petproject.service.MemoryAnswer;
 import ru.ravil.petproject.service.MemoryAnswerService;
+import ru.ravil.petproject.service.MemoryDeduplicationService;
 import ru.ravil.petproject.service.MemoryEditService;
 import ru.ravil.petproject.service.MemoryTaskService;
 import ru.ravil.petproject.service.OpenTask;
@@ -53,6 +55,7 @@ public class TelegramBotPollingService {
     private final MemoryAnswerService memoryAnswerService;
     private final MemoryTaskService memoryTaskService;
     private final MemoryEditService memoryEditService;
+    private final MemoryDeduplicationService deduplicationService;
     private final TelegramImageIngestionService imageIngestionService;
     private final TelegramVoiceIngestionService voiceIngestionService;
     private final AtomicBoolean polling = new AtomicBoolean(false);
@@ -73,6 +76,7 @@ public class TelegramBotPollingService {
             MemoryAnswerService memoryAnswerService,
             MemoryTaskService memoryTaskService,
             MemoryEditService memoryEditService,
+            MemoryDeduplicationService deduplicationService,
             TelegramImageIngestionService imageIngestionService,
             TelegramVoiceIngestionService voiceIngestionService
     ) {
@@ -88,6 +92,7 @@ public class TelegramBotPollingService {
         this.memoryAnswerService = memoryAnswerService;
         this.memoryTaskService = memoryTaskService;
         this.memoryEditService = memoryEditService;
+        this.deduplicationService = deduplicationService;
         this.imageIngestionService = imageIngestionService;
         this.voiceIngestionService = voiceIngestionService;
     }
@@ -184,6 +189,10 @@ public class TelegramBotPollingService {
         }
         if (normalizedText.equals("/edit") || normalizedText.startsWith("/edit ")) {
             handleEdit(chatId, normalizedText);
+            return;
+        }
+        if (normalizedText.equals("/duplicates")) {
+            handleDuplicates(chatId);
             return;
         }
 
@@ -438,6 +447,26 @@ public class TelegramBotPollingService {
                         updated -> telegramApiClient.sendMessage(chatId, "Обновил: " + memoryTitle(updated)),
                         () -> telegramApiClient.sendMessage(chatId, "Не удалось обновить запись.")
                 );
+    }
+
+    private void handleDuplicates(long chatId) {
+        List<DuplicatePairResponse> pairs = deduplicationService.findDuplicates(null, 20);
+        if (pairs.isEmpty()) {
+            telegramApiClient.sendMessage(chatId, "Похожих записей не нашёл.");
+            return;
+        }
+        // Number the duplicate-side units and remember them so /forget <n> drops the redundant one.
+        List<MemoryUnitResponse> duplicates = pairs.stream().map(DuplicatePairResponse::duplicate).toList();
+        lastListedMemories.put(chatId, duplicates);
+
+        StringBuilder builder = new StringBuilder("Похожие записи (лишнюю убери: /forget <номер>):\n");
+        for (int i = 0; i < pairs.size(); i++) {
+            DuplicatePairResponse pair = pairs.get(i);
+            builder.append(i + 1).append(". ").append(memoryTitle(pair.duplicate()))
+                    .append("\n   ≈ ").append(memoryTitle(pair.canonical()))
+                    .append(" (").append(Math.round(pair.similarity() * 100)).append("%)\n");
+        }
+        telegramApiClient.sendMessage(chatId, builder.toString().trim());
     }
 
     private void rememberListedMemories(long chatId, List<MemoryUnitResponse> items, Optional<MemoryAnswer> answer) {

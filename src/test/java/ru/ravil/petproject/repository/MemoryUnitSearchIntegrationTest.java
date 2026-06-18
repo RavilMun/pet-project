@@ -167,6 +167,35 @@ class MemoryUnitSearchIntegrationTest {
         assertThat(searchKafka()).extracting(MemoryUnit::getId).contains(kafka.getId());
     }
 
+    @Test
+    void findsNearDuplicatePairsAcrossDifferentItems() {
+        MemoryUnit a = unit("Купил кресло Markus в IKEA", "кресло Markus", MemoryUnitType.PURCHASE_RESEARCH, Set.of("кресло"));
+        MemoryUnit b = unit("Приобрёл кресло Markus в ИКЕА", "кресло Markus", MemoryUnitType.PURCHASE_RESEARCH, Set.of("кресло"));
+        MemoryUnit far = unit("Посмотреть фильм Дюна", "Дюна", MemoryUnitType.MOVIE, Set.of("дюна"));
+        memoryUnitRepository.updateEmbedding(a.getId(), vectorLiteral(0.9), "test-embedding", OffsetDateTime.now());
+        memoryUnitRepository.updateEmbedding(b.getId(), vectorLiteral(0.9), "test-embedding", OffsetDateTime.now());
+        memoryUnitRepository.updateEmbedding(far.getId(), vectorLiteral(-0.9), "test-embedding", OffsetDateTime.now());
+
+        List<ru.ravil.petproject.repository.DuplicatePairProjection> pairs =
+                memoryUnitRepository.findDuplicatePairs(0.05, PageRequest.of(0, 10));
+
+        assertThat(pairs).hasSize(1);
+        assertThat(Set.of(pairs.getFirst().getUnitAId(), pairs.getFirst().getUnitBId()))
+                .containsExactlyInAnyOrder(a.getId(), b.getId());
+        assertThat(pairs.getFirst().getDistance()).isLessThanOrEqualTo(0.05);
+    }
+
+    @Test
+    void doesNotPairForgottenUnits() {
+        MemoryUnit a = unit("Купил кресло Markus в IKEA", "кресло Markus", MemoryUnitType.PURCHASE_RESEARCH, Set.of("кресло"));
+        MemoryUnit b = unit("Приобрёл кресло Markus в ИКЕА", "кресло Markus", MemoryUnitType.PURCHASE_RESEARCH, Set.of("кресло"));
+        memoryUnitRepository.updateEmbedding(a.getId(), vectorLiteral(0.9), "test-embedding", OffsetDateTime.now());
+        memoryUnitRepository.updateEmbedding(b.getId(), vectorLiteral(0.9), "test-embedding", OffsetDateTime.now());
+        memoryUnitRepository.markForgotten(b.getId(), OffsetDateTime.now());
+
+        assertThat(memoryUnitRepository.findDuplicatePairs(0.05, PageRequest.of(0, 10))).isEmpty();
+    }
+
     private List<MemoryUnit> searchKafka() {
         return memoryUnitRepository.searchAdvanced(
                         "kafka", true, "", false, "", false,

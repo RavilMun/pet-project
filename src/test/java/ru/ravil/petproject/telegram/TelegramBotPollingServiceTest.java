@@ -34,6 +34,7 @@ import ru.ravil.petproject.service.InboxItemService;
 import ru.ravil.petproject.service.InboxItemEmbeddingBackfillService;
 import ru.ravil.petproject.service.MemoryAnswer;
 import ru.ravil.petproject.service.MemoryAnswerService;
+import ru.ravil.petproject.service.MemoryDeduplicationService;
 import ru.ravil.petproject.service.MemoryEditService;
 import ru.ravil.petproject.service.MemoryTaskService;
 import ru.ravil.petproject.service.NaturalLanguageSearchQueryParser;
@@ -49,6 +50,7 @@ class TelegramBotPollingServiceTest {
     private MemoryAnswerService memoryAnswerService;
     private MemoryTaskService memoryTaskService;
     private MemoryEditService memoryEditService;
+    private MemoryDeduplicationService deduplicationService;
     private TelegramImageIngestionService imageIngestionService;
     private TelegramVoiceIngestionService voiceIngestionService;
     private AiTelegramIntentDetector aiTelegramIntentDetector;
@@ -62,6 +64,7 @@ class TelegramBotPollingServiceTest {
         memoryAnswerService = Mockito.mock(MemoryAnswerService.class);
         memoryTaskService = Mockito.mock(MemoryTaskService.class);
         memoryEditService = Mockito.mock(MemoryEditService.class);
+        deduplicationService = Mockito.mock(MemoryDeduplicationService.class);
         imageIngestionService = Mockito.mock(TelegramImageIngestionService.class);
         voiceIngestionService = Mockito.mock(TelegramVoiceIngestionService.class);
         aiTelegramIntentDetector = Mockito.mock(AiTelegramIntentDetector.class);
@@ -640,6 +643,7 @@ class TelegramBotPollingServiceTest {
                 memoryAnswerService,
                 memoryTaskService,
                 memoryEditService,
+                deduplicationService,
                 imageIngestionService,
                 voiceIngestionService
         );
