@@ -97,7 +97,7 @@ Both store the Telegram `file_id` on `inbox_items.media_file_id` (+ `media_type`
 
 ### REST API (`InboxItemController`, `/api/inbox-items`)
 
-`GET /search?q=` runs the query through `NaturalLanguageSearchQueryParser` first (recognizes "recent"/"today"-style natural language before falling back to full search), mirroring what the Telegram SEARCH intent does.
+`GET /search?q=` runs the query through `NaturalLanguageSearchQueryParser` first (recognizes "recent"/"today"-style natural language before falling back to full search), mirroring what the Telegram SEARCH intent does. `MemoryUnitController` (`/api/memory-units`) exposes forget/recall/edit + `/duplicates`. `MediaController` (Phase 6.2, non-Telegram image path): `POST /api/inbox-items/image` (multipart → vision → `create` + store bytes) and `GET /api/inbox-items/{id}/image` — binary stored as `bytea` in a separate `stored_media` table (keyed by item id, `MediaStorageService`) so blobs never load on ordinary queries; the Telegram path instead keeps a `media_file_id` with no binary storage.
 
 ### Data model / migrations
 

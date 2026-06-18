@@ -617,3 +617,30 @@ databaseChangeLog:
             oldColumnName: image_file_id
             newColumnName: media_file_id
             columnDataType: varchar(255)
+
+  - changeSet:
+      id: 016-create-stored-media
+      author: codex
+      changes:
+        - createTable:
+            tableName: stored_media
+            columns:
+              - column:
+                  name: item_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: content_type
+                  type: varchar(128)
+              - column:
+                  name: bytes
+                  type: bytea
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
