@@ -60,6 +60,10 @@
   - Подключён в `tokenMatchScore` и `anchorMatchesToken` через `stemMatches`, загейчен `search.ranking.stemming-enabled` (default **false** → поведение не меняется, текущие тесты зелёные).
   - **План валидации:** прогнать eval с `SEARCH_STEMMING_ENABLED=true` (isolated) против baseline; копировать в `report-stemming-isolated.json`. Если стемминг даёт ложные слияния (разные слова с общим стемом) и проседает accuracy — откатить флаг/ужесточить (min stem length, не трогать anchor).
 
+**Разбор isolated-baseline (accuracy 0.9765, 83 PASS / 2 FAIL):** оба фейла — в синтезе/темпоральности, не в токен-матчинге. Отсюда два дефекта:
+- [x] **3.4 Темпоральная точность** — **сделано.** Предикат периода теперь предпочитает `occurred_at`, а `created_at` — только при `occurred_at IS NULL` (`(occurred_at not null and in range) or (occurred_at null and created_at in range)`), во всех 4 запросах (`findBySourceCreatedAtBetween`, `searchAdvancedBetween` ×2, `searchNearestByEmbeddingBetween`). Чинит `long_diary_002`: вчерашнее событие, записанное сегодня, больше не протекает в TODAY через `created_at`. Детерминированный Testcontainers-тест `periodFilterPrefersOccurredAtOverCreatedAt`. ⚠️ Нужен прогон eval для подтверждения отсутствия регрессий (фикс сохраняет «что было в марте» по occurred_at).
+- [ ] **3.5 Recall при морфологическом разрыве на FTS** (дефект A). «на **обед** ходили в Birch» не поднимается на запрос «где **обедал**»: strict `tsquery('russian')` стеммит обед/обедал в разные лексемы, relaxed `обедал:*` не матчит более короткое «обед» (направление префикса), ILIKE тоже мимо → остаётся только вектор, который Birch не вытянул. 3.3-стеммер тут НЕ помогает (работает в `score()` над уже извлечёнными кандидатами). Нужен фикс на слое retrieval: стеммить запрос для relaxed-tsquery / усилить vector-recall для темпоральных запросов / ослабить anchor-фильтр для вектора. Требует точечного прогона кейса с дампом извлечённых юнитов и кандидатов.
+
 ## Фаза 4 — Жизненный цикл памяти (M)
 
 - [ ] **4.1** Правка/удаление/«забыть»: `/forget`, `/edit`, пометка факта неверным.

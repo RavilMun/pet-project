@@ -149,6 +149,47 @@ class MemoryUnitSearchIntegrationTest {
         assertThat(results).extracting(MemoryUnit::getType).containsExactly(MemoryUnitType.MOVIE);
     }
 
+    @Test
+    void periodFilterPrefersOccurredAtOverCreatedAt() {
+        // All three rows are created "today" (auto @PrePersist). occurred_at is what should decide
+        // membership in the TODAY period — a yesterday event recorded today must NOT match.
+        MemoryUnit todayEvent = unitWithOccurredAt("Обед в Birch", OffsetDateTime.now());
+        MemoryUnit yesterdayEvent = unitWithOccurredAt("Обед в Tokyo City", OffsetDateTime.now().minusDays(1));
+        MemoryUnit noDate = unitWithOccurredAt("Заметка без даты", null);
+
+        OffsetDateTime start = OffsetDateTime.now().toLocalDate().atStartOfDay(OffsetDateTime.now().getOffset()).toOffsetDateTime();
+        OffsetDateTime end = start.plusDays(1);
+
+        List<MemoryUnit> results = memoryUnitRepository.searchAdvancedBetween(
+                        "", false,
+                        "", false,
+                        "", false,
+                        Set.of("__no_types__"), false,
+                        Set.of("__no_tags__"), false,
+                        start, end,
+                        PageRequest.of(0, 10)
+                )
+                .stream()
+                .toList();
+
+        assertThat(results).extracting(MemoryUnit::getId)
+                .contains(todayEvent.getId(), noDate.getId())
+                .doesNotContain(yesterdayEvent.getId());
+    }
+
+    private MemoryUnit unitWithOccurredAt(String title, OffsetDateTime occurredAt) {
+        InboxItem item = new InboxItem(title, InboxItemSource.MANUAL);
+        item.setTitle(title);
+        item.setType(InboxItemType.NOTE);
+        MemoryUnit unit = new MemoryUnit(item, MemoryUnitType.EVENT, title);
+        unit.setSummary(title);
+        unit.setSourceQuote(title);
+        unit.setOccurredAt(occurredAt);
+        item.addMemoryUnit(unit);
+        inboxItemRepository.saveAndFlush(item);
+        return unit;
+    }
+
     private MemoryUnit unit(String rawText, String title, MemoryUnitType type, Set<String> tags) {
         return unit(rawText, title, type, tags, new SlotSpec[0]);
     }
