@@ -95,6 +95,27 @@ public interface MemoryUnitRepository extends JpaRepository<MemoryUnit, UUID> {
             Pageable pageable
     );
 
+    @Query(
+            value = """
+                    select b.*
+                    from memory_units b
+                    join memory_units a
+                      on a.inbox_item_id = :itemId
+                     and a.embedding is not null
+                    where b.inbox_item_id <> :itemId
+                      and b.embedding is not null
+                      and b.forgotten_at is null
+                      and (a.embedding <=> b.embedding) <= :maxDistance
+                    order by (a.embedding <=> b.embedding) asc
+                    """,
+            nativeQuery = true
+    )
+    List<MemoryUnit> findRelatedToItem(
+            @Param("itemId") UUID itemId,
+            @Param("maxDistance") double maxDistance,
+            Pageable pageable
+    );
+
     @Modifying
     @Transactional
     @Query("update MemoryUnit unit set unit.forgottenAt = :forgottenAt where unit.id = :id and unit.forgottenAt is null")

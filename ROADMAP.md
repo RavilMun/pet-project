@@ -116,3 +116,9 @@
   - Тесты: `TelegramVoiceIngestionServiceTest` (транскрипт/плейсхолдер/недоступный файл + аргументы create), поллер voice-маршрут, `TelegramMessage` 6-арг.
   - [x] Кап по длительности: голосовое > 10 мин (`MAX_VOICE_SECONDS=600`) не транскрибируется (защита от стоимости/таймаута), бот отвечает «слишком длинное». Тест `pollRejectsTooLongVoiceWithoutIngesting`.
   - Отложено (низкая ценность): вынос модели в `openai.transcription-model` (заметный ripple ради смены модели, которая и так whisper-1); `language=ru`-хинт; `audio`/`video_note`; реальный E2E с живым ботом/ключом.
+
+## Фаза 8 — Связи, проактивность, разбор ссылок (M, превращают поиск в живой второй мозг)
+
+- [x] **8.1 Связи при захвате** — **сделано.** После успешной обработки (`process`) публикуется `InboxItemProcessedEvent`; `TelegramConnectionNotifier` (`@TransactionalEventListener AFTER_COMMIT`, гейт bot) находит похожие прошлые юниты (`MemoryConnectionService` → `findRelatedToItem`, pgvector, cosine-distance ≤ 0.30, исключая тот же item/забытые) и шлёт «🔗 Похоже на прошлое: …». Переиспользует эмбеддинги; degrade при openai off (нет эмбеддингов → пусто). Тест: repo-интеграция (related через items, исключение self/forgotten).
+- [ ] **8.2 Проактивный дайджест** — `@Scheduled` (cron) в allowed-chat: задачи на сегодня, вчерашние захваты, «в этот день».
+- [ ] **8.3 Разбор ссылок** — fetch (Jsoup) → суммаризация (OpenAI) → отдельный `ARTICLE`-юнит с содержимым статьи.

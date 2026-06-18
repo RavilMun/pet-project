@@ -56,6 +56,7 @@ public class InboxItemService {
     private final ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
     private final MemoryUnitRepository memoryUnitRepository;
     private final ObjectProvider<InboxItemService> selfProvider;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     public InboxItemService(
             InboxItemRepository inboxItemRepository,
@@ -65,7 +66,8 @@ public class InboxItemService {
             AiClassificationService aiClassificationService,
             AiMemoryUnitExtractionService aiMemoryUnitExtractionService,
             ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider,
-            ObjectProvider<InboxItemService> selfProvider
+            ObjectProvider<InboxItemService> selfProvider,
+            org.springframework.context.ApplicationEventPublisher eventPublisher
     ) {
         this.inboxItemRepository = inboxItemRepository;
         this.memoryUnitRepository = memoryUnitRepository;
@@ -75,6 +77,7 @@ public class InboxItemService {
         this.aiMemoryUnitExtractionService = aiMemoryUnitExtractionService;
         this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
         this.selfProvider = selfProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -117,6 +120,7 @@ public class InboxItemService {
             item.setNextAttemptAt(null);
             InboxItem savedItem = inboxItemRepository.save(item);
             updateMemoryUnitEmbeddingsIfAvailable(savedItem);
+            eventPublisher.publishEvent(new InboxItemProcessedEvent(savedItem.getId(), savedItem.getTelegramChatId()));
             return inboxItemMapper.toResponse(savedItem);
         } catch (RuntimeException exception) {
             item.setStatus(InboxItemStatus.FAILED_AI);

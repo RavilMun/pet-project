@@ -90,7 +90,8 @@ class InboxItemServiceTest {
                 aiClassificationService,
                 aiMemoryUnitExtractionService,
                 aiEmbeddingServiceProvider,
-                selfProvider
+                selfProvider,
+                event -> { }
         );
         lenient().when(selfProvider.getObject()).thenReturn(inboxItemService);
         // Degraded-save flow persists twice (raw capture + AI processing) and reloads the raw item by id.

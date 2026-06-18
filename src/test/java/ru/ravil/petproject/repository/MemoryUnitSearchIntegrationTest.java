@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
@@ -194,6 +195,27 @@ class MemoryUnitSearchIntegrationTest {
         memoryUnitRepository.markForgotten(b.getId(), OffsetDateTime.now());
 
         assertThat(memoryUnitRepository.findDuplicatePairs(0.05, PageRequest.of(0, 10))).isEmpty();
+    }
+
+    @Test
+    void findsRelatedToItemAcrossItemsExcludingSelfAndForgotten() {
+        MemoryUnit source = unit("Купил кресло Markus в IKEA", "кресло Markus", MemoryUnitType.PURCHASE_RESEARCH, Set.of("кресло"));
+        MemoryUnit related = unit("Присматриваю кресло для кабинета", "кресло кабинет", MemoryUnitType.PREFERENCE, Set.of("кресло"));
+        MemoryUnit unrelated = unit("Посмотреть фильм Дюна", "Дюна", MemoryUnitType.MOVIE, Set.of("дюна"));
+        memoryUnitRepository.updateEmbedding(source.getId(), vectorLiteral(0.9), "test-embedding", OffsetDateTime.now());
+        memoryUnitRepository.updateEmbedding(related.getId(), vectorLiteral(0.9), "test-embedding", OffsetDateTime.now());
+        memoryUnitRepository.updateEmbedding(unrelated.getId(), vectorLiteral(-0.9), "test-embedding", OffsetDateTime.now());
+
+        UUID sourceItemId = source.getItem().getId();
+        assertThat(memoryUnitRepository.findRelatedToItem(sourceItemId, 0.30, PageRequest.of(0, 10)))
+                .extracting(MemoryUnit::getId)
+                .contains(related.getId())
+                .doesNotContain(source.getId(), unrelated.getId());
+
+        memoryUnitRepository.markForgotten(related.getId(), OffsetDateTime.now());
+        assertThat(memoryUnitRepository.findRelatedToItem(sourceItemId, 0.30, PageRequest.of(0, 10)))
+                .extracting(MemoryUnit::getId)
+                .doesNotContain(related.getId());
     }
 
     private List<MemoryUnit> searchKafka() {
