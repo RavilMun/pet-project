@@ -120,5 +120,5 @@
 ## Фаза 8 — Связи, проактивность, разбор ссылок (M, превращают поиск в живой второй мозг)
 
 - [x] **8.1 Связи при захвате** — **сделано.** После успешной обработки (`process`) публикуется `InboxItemProcessedEvent`; `TelegramConnectionNotifier` (`@TransactionalEventListener AFTER_COMMIT`, гейт bot) находит похожие прошлые юниты (`MemoryConnectionService` → `findRelatedToItem`, pgvector, cosine-distance ≤ 0.30, исключая тот же item/забытые) и шлёт «🔗 Похоже на прошлое: …». Переиспользует эмбеддинги; degrade при openai off (нет эмбеддингов → пусто). Тест: repo-интеграция (related через items, исключение self/forgotten).
-- [ ] **8.2 Проактивный дайджест** — `@Scheduled` (cron) в allowed-chat: задачи на сегодня, вчерашние захваты, «в этот день».
+- [x] **8.2 Проактивный дайджест** — **сделано.** `MemoryDigestService.buildDigest(chatId)` (открытые задачи + захваты за последние сутки; `Optional.empty()` если нечего) + `TelegramDigestScheduler` (`@Scheduled(cron=${telegram.bot.digest.cron:0 0 9 * * *})`, гейт bot, шлёт в `allowed-chat-id`). Тест `MemoryDigestServiceTest`. «В этот день» — отложено.
 - [ ] **8.3 Разбор ссылок** — fetch (Jsoup) → суммаризация (OpenAI) → отдельный `ARTICLE`-юнит с содержимым статьи.

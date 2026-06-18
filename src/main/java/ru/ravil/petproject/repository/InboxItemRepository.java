@@ -30,6 +30,12 @@ public interface InboxItemRepository extends JpaRepository<InboxItem, UUID> {
 
     Optional<InboxItem> findFirstByTelegramChatIdOrderByCreatedAtDesc(Long telegramChatId);
 
+    List<InboxItem> findByTelegramChatIdAndCreatedAtAfterOrderByCreatedAtDesc(
+            Long telegramChatId,
+            OffsetDateTime createdAt,
+            Pageable pageable
+    );
+
     Page<InboxItem> findByCreatedAtBetweenOrderByCreatedAtDesc(
             OffsetDateTime start,
             OffsetDateTime end,
