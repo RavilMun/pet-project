@@ -93,10 +93,13 @@ public class MemoryAnswerService {
 
     private final ObjectProvider<OpenAiClient> openAiClientProvider;
     private final ObjectMapper objectMapper;
+    private final ru.ravil.petproject.metrics.MetricsService metrics;
 
-    public MemoryAnswerService(ObjectProvider<OpenAiClient> openAiClientProvider, ObjectMapper objectMapper) {
+    public MemoryAnswerService(ObjectProvider<OpenAiClient> openAiClientProvider, ObjectMapper objectMapper,
+                               ru.ravil.petproject.metrics.MetricsService metrics) {
         this.openAiClientProvider = openAiClientProvider;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
     }
 
     public Optional<MemoryAnswer> answer(String query, List<MemoryUnitResponse> candidates) {
@@ -113,16 +116,19 @@ public class MemoryAnswerService {
                 .limit(MAX_CONTEXT_ITEMS)
                 .toList();
 
+        Optional<MemoryAnswer> result;
         try {
             String prompt = "Question:\n" + query.trim()
                     + "\n\nRetrieved memory units JSON:\n"
                     + objectMapper.writeValueAsString(toContext(context));
             String response = openAiClient.classify(SYSTEM_PROMPT, prompt);
-            return parse(response, context);
+            result = parse(response, context);
         } catch (Exception exception) {
             log.warn("Memory answer generation failed: {}", exception.getMessage());
-            return Optional.empty();
+            result = Optional.empty();
         }
+        metrics.increment(result.isPresent() ? "answer.produced" : "answer.empty");
+        return result;
     }
 
     private Optional<MemoryAnswer> parse(String json, List<MemoryUnitResponse> context) throws Exception {

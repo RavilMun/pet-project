@@ -28,10 +28,17 @@ public class OpenAiClient {
     private final RestClient restClient;
     private final String model;
     private final String embeddingModel;
+    private final ru.ravil.petproject.metrics.MetricsService metrics;
 
     public OpenAiClient(String apiKey, String model, String embeddingModel) {
+        this(apiKey, model, embeddingModel, null);
+    }
+
+    public OpenAiClient(String apiKey, String model, String embeddingModel,
+                        ru.ravil.petproject.metrics.MetricsService metrics) {
         this.model = model;
         this.embeddingModel = embeddingModel;
+        this.metrics = metrics;
 
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(10));
@@ -56,11 +63,13 @@ public class OpenAiClient {
                 0.1
         );
 
+        long startNanos = System.nanoTime();
         OpenAiChatCompletionResponse response = executeWithRetry("chat.completions", () -> restClient.post()
                 .uri("/chat/completions")
                 .body(request)
                 .retrieve()
                 .body(OpenAiChatCompletionResponse.class));
+        recordAi("classify", startNanos, response == null ? null : response.usage());
 
         if (response == null || response.choices() == null || response.choices().isEmpty()) {
             throw new IllegalStateException("OpenAI response has no choices");
@@ -98,11 +107,13 @@ public class OpenAiClient {
                 "temperature", 0.2
         );
 
+        long startNanos = System.nanoTime();
         OpenAiChatCompletionResponse response = executeWithRetry("vision", () -> restClient.post()
                 .uri("/chat/completions")
                 .body(body)
                 .retrieve()
                 .body(OpenAiChatCompletionResponse.class));
+        recordAi("vision", startNanos, response == null ? null : response.usage());
 
         if (response == null || response.choices() == null || response.choices().isEmpty()) {
             throw new IllegalStateException("OpenAI vision response has no choices");
@@ -130,12 +141,14 @@ public class OpenAiClient {
         });
         body.add("model", TRANSCRIPTION_MODEL);
 
+        long startNanos = System.nanoTime();
         OpenAiTranscriptionResponse response = executeWithRetry("audio.transcriptions", () -> restClient.post()
                 .uri("/audio/transcriptions")
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(body)
                 .retrieve()
                 .body(OpenAiTranscriptionResponse.class));
+        recordAi("transcribe", startNanos, null);
 
         if (response == null || response.text() == null) {
             throw new IllegalStateException("OpenAI transcription response has no text");
@@ -146,11 +159,13 @@ public class OpenAiClient {
     public List<Double> embed(String input) {
         OpenAiEmbeddingRequest request = new OpenAiEmbeddingRequest(embeddingModel, input);
 
+        long startNanos = System.nanoTime();
         OpenAiEmbeddingResponse response = executeWithRetry("embeddings", () -> restClient.post()
                 .uri("/embeddings")
                 .body(request)
                 .retrieve()
                 .body(OpenAiEmbeddingResponse.class));
+        recordAi("embed", startNanos, response == null ? null : response.usage());
 
         if (response == null || response.data() == null || response.data().isEmpty()) {
             throw new IllegalStateException("OpenAI embedding response has no data");
@@ -166,6 +181,17 @@ public class OpenAiClient {
 
     public String embeddingModel() {
         return embeddingModel;
+    }
+
+    private void recordAi(String operation, long startNanos, OpenAiUsage usage) {
+        if (metrics == null) {
+            return;
+        }
+        metrics.recordMillis("ai." + operation + ".ms", (System.nanoTime() - startNanos) / 1_000_000L);
+        metrics.increment("ai." + operation + ".count");
+        if (usage != null && usage.totalTokens() != null) {
+            metrics.addTokens("ai." + operation, usage.totalTokens());
+        }
     }
 
     private <T> T executeWithRetry(String operation, Supplier<T> call) {

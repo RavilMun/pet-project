@@ -31,7 +31,8 @@ class MemoryAnswerServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new MemoryAnswerService(openAiClientProvider, new ObjectMapper());
+        service = new MemoryAnswerService(openAiClientProvider, new ObjectMapper(),
+                new ru.ravil.petproject.metrics.MetricsService());
     }
 
     @Test

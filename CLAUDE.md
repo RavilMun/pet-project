@@ -91,6 +91,10 @@ Recognized intents: HELP, RECENT, TODAY, SEARCH, CAPTURE/UNKNOWN (falls through 
 
 Both store the Telegram `file_id` on `inbox_items.media_file_id` (+ `media_type` discriminator, migrations `013`/`015`); `MemoryUnitResponse.imageFileId` is populated by the mapper **only for `image/*` media** (for photo re-send). When OpenAI is disabled, ingestion degrades to placeholder text but still captures the `file_id`. All AI media calls reuse the 1.3 retry layer.
 
+### Observability (`metrics` package)
+
+`MetricsService` is a dependency-free in-memory metrics sink (Phase 5.2): named counters, timers (count/total/avg millis) and per-operation token totals, exposed as a snapshot via `GET /api/metrics` (`MetricsController`). Instrumented: `OpenAiClient` (AI-step latency `ai.<op>.ms` + token spend `ai.<op>` from the response `usage`, via an optional 4-arg constructor — the 3-arg one delegates with `null` so it stays a no-op in tests), `MemoryAnswerService` (`answer.produced`/`answer.empty` → answer rate), `InboxItemSearchService` (`search.requested`, `search.ms`). Deliberately not Micrometer/Actuator — personal-scale only.
+
 ### REST API (`InboxItemController`, `/api/inbox-items`)
 
 `GET /search?q=` runs the query through `NaturalLanguageSearchQueryParser` first (recognizes "recent"/"today"-style natural language before falling back to full search), mirroring what the Telegram SEARCH intent does.

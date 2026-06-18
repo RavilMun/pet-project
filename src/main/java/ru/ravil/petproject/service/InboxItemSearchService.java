@@ -44,19 +44,22 @@ public class InboxItemSearchService {
     private final ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider;
     private final MemoryRerankService memoryRerankService;
     private final SearchRankingProperties ranking;
+    private final ru.ravil.petproject.metrics.MetricsService metrics;
 
     public InboxItemSearchService(
             MemoryUnitRepository memoryUnitRepository,
             MemoryUnitMapper memoryUnitMapper,
             ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider,
             MemoryRerankService memoryRerankService,
-            SearchRankingProperties ranking
+            SearchRankingProperties ranking,
+            ru.ravil.petproject.metrics.MetricsService metrics
     ) {
         this.memoryUnitRepository = memoryUnitRepository;
         this.memoryUnitMapper = memoryUnitMapper;
         this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
         this.memoryRerankService = memoryRerankService;
         this.ranking = ranking;
+        this.metrics = metrics;
     }
 
     @Transactional(readOnly = true)
@@ -115,6 +118,8 @@ public class InboxItemSearchService {
             return List.of();
         }
 
+        metrics.increment("search.requested");
+        long searchStartNanos = System.nanoTime();
         DateRange dateRange = dateRange(normalizedPeriod);
         int normalizedLimit = normalizeLimit(limit);
         int candidateLimit = candidateLimit(normalizedLimit);
@@ -194,9 +199,11 @@ public class InboxItemSearchService {
                 .limit(rerankWindow)
                 .map(memoryUnitMapper::toResponse)
                 .toList();
-        return memoryRerankService.rerank(normalizedQuery, topResponses).stream()
+        List<MemoryUnitResponse> output = memoryRerankService.rerank(normalizedQuery, topResponses).stream()
                 .limit(normalizedLimit)
                 .toList();
+        metrics.recordMillis("search.ms", (System.nanoTime() - searchStartNanos) / 1_000_000L);
+        return output;
     }
 
     private List<MemoryUnit> searchLexical(

@@ -81,7 +81,7 @@
 - [x] **5.1** Авто-ловля регрессий ранжирования — **сделано** (два уровня):
   - **Дешёвый guard на каждый билд:** `RetrievalRegressionGuardTest` (eval-пакет, без тега → в обычном `test`). Сидит курируемый набор юнитов в реальный Postgres (Testcontainers), гоняет настоящий `InboxItemSearchService.search()` с openai off (лексический путь) и проверяет recall / дизамбигуацию похожих объектов / фильтры по типу и тегу. **Без API, без judge, секунды** — ловит регрессии FTS-запросов, `score()`-весов и cutoffs бесплатно. Платный `memoryEval` остаётся для полной семантической оценки.
   - **Регулярный полный прогон:** GitHub Actions `.github/workflows/memory-eval.yml` — `memoryEval` (judge) ночью (cron) + ручной dispatch (выбор `isolated`/`accumulated`, judge on/off), ключ из secret `OPENAI_API_KEY`, отчёт как артефакт. Активируется при пуше в GitHub (сейчас `main` локальный).
-- [ ] **5.2** Метрики: доля поисков с ответом, доля `canAnswer=false`, латентность ИИ-шагов, расход токенов.
+- [x] **5.2** Метрики — **сделано** (лёгкий in-house `MetricsService`, без новых зависимостей): счётчики (`search.requested`, `answer.produced`/`answer.empty`), таймеры ИИ-шагов (`ai.classify/embed/vision/transcribe.ms`, `search.ms`) и расход токенов (`ai.*` из `usage` ответов OpenAI). `OpenAiClient` инструментирован через опциональный 4-арг конструктор (3-арг делегирует с `null` → тесты не тронуты). Снапшот через `GET /api/metrics`. Тест `MetricsServiceTest`.
 - [ ] **5.3** Хардненинг REST (аутентификация) — если API выйдет наружу; сейчас `/api/inbox-items` открыт.
 
 ## Фаза 6 — Изображения (M; MVP — невысокая сложность)
