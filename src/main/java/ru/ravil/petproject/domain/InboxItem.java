@@ -77,8 +77,8 @@ public class InboxItem {
     @Column(name = "telegram_message_id")
     private Long telegramMessageId;
 
-    @Column(name = "image_file_id")
-    private String imageFileId;
+    @Column(name = "media_file_id")
+    private String mediaFileId;
 
     @Column(name = "media_type", length = 64)
     private String mediaType;

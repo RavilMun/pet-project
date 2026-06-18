@@ -8,7 +8,8 @@ public record TelegramMessage(
         TelegramChat chat,
         String text,
         List<TelegramPhotoSize> photo,
-        String caption
+        String caption,
+        TelegramVoice voice
 ) {
 
     /** Largest available photo size, or {@code null} if this message carries no photo. */

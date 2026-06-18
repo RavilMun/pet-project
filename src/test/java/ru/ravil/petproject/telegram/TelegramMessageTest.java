@@ -15,7 +15,7 @@ class TelegramMessageTest {
                         new TelegramPhotoSize("big", "u2", 800, 800, 50000),
                         new TelegramPhotoSize("mid", "u3", 320, 320, 8000)
                 ),
-                "caption");
+                "caption", null);
 
         assertThat(message.largestPhoto()).isNotNull();
         assertThat(message.largestPhoto().fileId()).isEqualTo("big");
@@ -28,17 +28,17 @@ class TelegramMessageTest {
                         new TelegramPhotoSize("small", "u1", 90, 90, null),
                         new TelegramPhotoSize("big", "u2", 800, 800, null)
                 ),
-                null);
+                null, null);
 
         assertThat(message.largestPhoto().fileId()).isEqualTo("big");
     }
 
     @Test
     void largestPhotoIsNullWhenNoPhoto() {
-        TelegramMessage textOnly = new TelegramMessage(1L, null, "hi", null, null);
+        TelegramMessage textOnly = new TelegramMessage(1L, null, "hi", null, null, null);
         assertThat(textOnly.largestPhoto()).isNull();
 
-        TelegramMessage emptyPhoto = new TelegramMessage(1L, null, null, List.of(), null);
+        TelegramMessage emptyPhoto = new TelegramMessage(1L, null, null, List.of(), null, null);
         assertThat(emptyPhoto.largestPhoto()).isNull();
     }
 }

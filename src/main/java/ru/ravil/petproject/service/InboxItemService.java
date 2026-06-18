@@ -89,14 +89,15 @@ public class InboxItemService {
     }
 
     /**
-     * Same as {@link #create(CreateInboxItemRequest)} but attaches an image reference
-     * (e.g. a Telegram {@code file_id}) so the saved item can be re-sent on retrieval.
-     * The image's vision description is expected to already be in {@code request.rawText()}.
+     * Same as {@link #create(CreateInboxItemRequest)} but attaches a media reference
+     * (a Telegram {@code file_id} for a photo or voice message, with its {@code mediaType}) so the
+     * saved item can be re-sent on retrieval. The media's textual form (image vision description or
+     * voice transcript) is expected to already be in {@code request.rawText()}.
      */
-    public InboxItemResponse create(CreateInboxItemRequest request, String imageFileId, String mediaType) {
+    public InboxItemResponse create(CreateInboxItemRequest request, String mediaFileId, String mediaType) {
         List<ExtractedLink> links = linkExtractor.extract(request.rawText());
         InboxItem rawItem = buildRawItem(request, links);
-        rawItem.setImageFileId(imageFileId);
+        rawItem.setMediaFileId(mediaFileId);
         rawItem.setMediaType(mediaType);
         InboxItem savedRaw = inboxItemRepository.save(rawItem);
         return selfProvider.getObject().process(savedRaw.getId(), request);

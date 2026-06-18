@@ -32,7 +32,7 @@ public class MemoryUnitMapper {
                 unit.isActionable(),
                 unit.getConfidence(),
                 unit.getSourceQuote(),
-                item == null ? null : item.getImageFileId(),
+                imageFileId(item),
                 unit.getOccurredAt(),
                 unit.getDueAt(),
                 item == null ? null : item.getCreatedAt(),
@@ -40,4 +40,16 @@ public class MemoryUnitMapper {
                 unit.getUpdatedAt()
         );
     }
+
+    /**
+     * The media file id is surfaced only for image media (so the Telegram bot can re-send the photo);
+     * for voice/other media the transcript text carries the information and the audio is not re-sent.
+     */
+    private String imageFileId(InboxItem item) {
+        if (item == null || item.getMediaType() == null || !item.getMediaType().startsWith("image/")) {
+            return null;
+        }
+        return item.getMediaFileId();
+    }
 }
+

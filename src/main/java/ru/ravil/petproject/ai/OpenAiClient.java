@@ -8,9 +8,12 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -109,6 +112,35 @@ public class OpenAiClient {
             throw new IllegalStateException("OpenAI vision response has no message content");
         }
         return message.content();
+    }
+
+    private static final String TRANSCRIPTION_MODEL = "whisper-1";
+
+    /**
+     * Transcribes audio bytes (e.g. a Telegram OGG/Opus voice message) to text via the Whisper API.
+     * {@code filename} carries the extension Whisper uses for format detection (e.g. "voice.ogg").
+     */
+    public String transcribe(byte[] audio, String filename) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new ByteArrayResource(audio) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        });
+        body.add("model", TRANSCRIPTION_MODEL);
+
+        OpenAiTranscriptionResponse response = executeWithRetry("audio.transcriptions", () -> restClient.post()
+                .uri("/audio/transcriptions")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(body)
+                .retrieve()
+                .body(OpenAiTranscriptionResponse.class));
+
+        if (response == null || response.text() == null) {
+            throw new IllegalStateException("OpenAI transcription response has no text");
+        }
+        return response.text();
     }
 
     public List<Double> embed(String input) {

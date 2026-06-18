@@ -54,6 +54,7 @@ public class TelegramBotPollingService {
     private final MemoryTaskService memoryTaskService;
     private final MemoryEditService memoryEditService;
     private final TelegramImageIngestionService imageIngestionService;
+    private final TelegramVoiceIngestionService voiceIngestionService;
     private final AtomicBoolean polling = new AtomicBoolean(false);
     private final AtomicLong nextOffset = new AtomicLong(0);
     private final Map<Long, List<OpenTask>> lastListedTasks = new ConcurrentHashMap<>();
@@ -72,7 +73,8 @@ public class TelegramBotPollingService {
             MemoryAnswerService memoryAnswerService,
             MemoryTaskService memoryTaskService,
             MemoryEditService memoryEditService,
-            TelegramImageIngestionService imageIngestionService
+            TelegramImageIngestionService imageIngestionService,
+            TelegramVoiceIngestionService voiceIngestionService
     ) {
         this.telegramApiClient = telegramApiClient;
         this.properties = properties;
@@ -87,6 +89,7 @@ public class TelegramBotPollingService {
         this.memoryTaskService = memoryTaskService;
         this.memoryEditService = memoryEditService;
         this.imageIngestionService = imageIngestionService;
+        this.voiceIngestionService = voiceIngestionService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -140,6 +143,13 @@ public class TelegramBotPollingService {
         if (photo != null) {
             imageIngestionService.ingest(chatId, photo.fileId(), message.caption(), message.messageId());
             telegramApiClient.sendMessage(chatId, "Сохранил картинку, разберу позже.");
+            return;
+        }
+
+        TelegramVoice voice = message.voice();
+        if (voice != null) {
+            voiceIngestionService.ingest(chatId, voice.fileId(), message.messageId());
+            telegramApiClient.sendMessage(chatId, "Сохранил голосовое, разберу позже.");
             return;
         }
 

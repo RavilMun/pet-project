@@ -101,3 +101,17 @@
 - [ ] **6.3 (на потом, опционально):** CLIP-эмбеддинги изображений для визуального «найди похожую картинку» — отдельный класс, для текстового поиска по описанию не нужен.
 
 **Открытые решения:** где хранить байты для не-Telegram пути (ФС vs `bytea`); зависит ли retention от срока жизни `file_id`; нужен ли отдельный `MemoryUnitType`/тег для медиа.
+
+*Примечание:* колонка `image_file_id` обобщена в `media_file_id` (миграция `015`, см. Фазу 7) — `media_type` различает kind; `MemoryUnitResponse.imageFileId` маппер заполняет только для `image/*` (для пере-отправки фото).
+
+## Фаза 7 — Голосовые сообщения (M; MVP — низкая сложность, зеркало Фазы 6)
+
+**Ключевой приём:** аудио → транскрипция (Whisper) → текст как `rawText` → обычный пайплайн (classify→extract→embed) → ищется/отвечается существующим кодом. Многое переиспользовано из 6.1 (`getFile`/`downloadFile`, медиа-колонки, async-капча).
+
+- [x] **7.1 MVP (Telegram-only)** — **сделано** (компилируется, весь тест-набор зелёный):
+  - `OpenAiClient.transcribe(bytes, filename)` — multipart `/audio/transcriptions`, модель **`whisper-1`** (константа; в конфиг вынести позже), тот же retry-слой 1.3. Обёртка `AiTranscriptionService` (ObjectProvider-гейт, degrade при `openai.enabled=false`).
+  - Приём голосового: `TelegramMessage` + `voice` (`TelegramVoice`: file_id/duration/mime_type/file_size). Перехват `message.voice()` в `handleUpdate` до отказа по пустому тексту, ack «Сохранил голосовое, разберу позже».
+  - `TelegramVoiceIngestionService.ingest` (`@Async`, гейт `telegram.bot.enabled`) → `getFile`/`downloadFile` → `transcribe` → `InboxItemService.create(request, fileId, "audio/ogg")` с тегом `voice`; `rawText` = транскрипт (или плейсхолдер «Голосовое сообщение»).
+  - **Схема:** `inbox_items.image_file_id` → **`media_file_id`** (миграция `015` renameColumn), `media_type` различает image/voice. Аудио на выдаче не дослыается (ценность в транскрипте), но `file_id` хранится.
+  - Тесты: `TelegramVoiceIngestionServiceTest` (транскрипт/плейсхолдер/недоступный файл + аргументы create), поллер voice-маршрут, `TelegramMessage` 6-арг.
+  - Отложено: вынос модели в `openai.transcription-model`; `language=ru`-хинт; кап по длительности; `audio`/`video_note`; реальный E2E с живым ботом/ключом.

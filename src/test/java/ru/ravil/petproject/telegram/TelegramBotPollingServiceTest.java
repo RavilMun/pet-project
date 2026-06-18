@@ -50,6 +50,7 @@ class TelegramBotPollingServiceTest {
     private MemoryTaskService memoryTaskService;
     private MemoryEditService memoryEditService;
     private TelegramImageIngestionService imageIngestionService;
+    private TelegramVoiceIngestionService voiceIngestionService;
     private AiTelegramIntentDetector aiTelegramIntentDetector;
 
     @BeforeEach
@@ -62,6 +63,7 @@ class TelegramBotPollingServiceTest {
         memoryTaskService = Mockito.mock(MemoryTaskService.class);
         memoryEditService = Mockito.mock(MemoryEditService.class);
         imageIngestionService = Mockito.mock(TelegramImageIngestionService.class);
+        voiceIngestionService = Mockito.mock(TelegramVoiceIngestionService.class);
         aiTelegramIntentDetector = Mockito.mock(AiTelegramIntentDetector.class);
         when(aiTelegramIntentDetector.detect(anyString())).thenReturn(TelegramIntent.unknown());
         when(aiTelegramIntentDetector.detectAny(anyString())).thenReturn(TelegramIntent.unknown());
@@ -99,6 +101,19 @@ class TelegramBotPollingServiceTest {
 
         verify(imageIngestionService).ingest(42L, "file_42", "на чеке итого 1500", 1L);
         verify(telegramApiClient).sendMessage(42, "Сохранил картинку, разберу позже.");
+        verify(inboxItemService, never()).captureAsync(any(CreateInboxItemRequest.class));
+    }
+
+    @Test
+    void pollDelegatesVoiceToVoiceIngestionAndAcks() {
+        TelegramBotPollingService service = service(null);
+        TelegramUpdate update = updateWithVoice(100, 42, "voice_42");
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update));
+
+        service.poll();
+
+        verify(voiceIngestionService).ingest(42L, "voice_42", 1L);
+        verify(telegramApiClient).sendMessage(42, "Сохранил голосовое, разберу позже.");
         verify(inboxItemService, never()).captureAsync(any(CreateInboxItemRequest.class));
     }
 
@@ -625,12 +640,13 @@ class TelegramBotPollingServiceTest {
                 memoryAnswerService,
                 memoryTaskService,
                 memoryEditService,
-                imageIngestionService
+                imageIngestionService,
+                voiceIngestionService
         );
     }
 
     private static TelegramUpdate update(long updateId, long chatId, String text) {
-        return new TelegramUpdate(updateId, new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), text, null, null));
+        return new TelegramUpdate(updateId, new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), text, null, null, null));
     }
 
     private static TelegramUpdate updateWithPhoto(long updateId, long chatId, String caption, String fileId) {
@@ -639,7 +655,13 @@ class TelegramBotPollingServiceTest {
                 new TelegramPhotoSize(fileId, "u2", 800, 800, 50000)
         );
         return new TelegramUpdate(updateId,
-                new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), null, photo, caption));
+                new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), null, photo, caption, null));
+    }
+
+    private static TelegramUpdate updateWithVoice(long updateId, long chatId, String fileId) {
+        TelegramVoice voice = new TelegramVoice(fileId, "vu1", 7, "audio/ogg", 4096);
+        return new TelegramUpdate(updateId,
+                new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), null, null, null, voice));
     }
 
     private static InboxItemResponse response() {

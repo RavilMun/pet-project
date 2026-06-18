@@ -607,3 +607,13 @@ databaseChangeLog:
               - column:
                   name: forgotten_at
                   type: timestamp with time zone
+
+  - changeSet:
+      id: 015-rename-image-file-id-to-media-file-id
+      author: codex
+      changes:
+        - renameColumn:
+            tableName: inbox_items
+            oldColumnName: image_file_id
+            newColumnName: media_file_id
+            columnDataType: varchar(255)
