@@ -24,6 +24,9 @@ public class TelegramConnectionNotifier {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramConnectionNotifier.class);
     private static final int MAX_RELATED = 3;
+    // Telegram allows only a fixed reaction set — these stand in for ✅/❌.
+    private static final String DONE_REACTION = "👍";
+    private static final String FAILED_REACTION = "👎";
 
     private final MemoryConnectionService connectionService;
     private final TelegramApiClient telegramApiClient;
@@ -38,12 +41,23 @@ public class TelegramConnectionNotifier {
         if (event.telegramChatId() == null) {
             return;
         }
+        // Capture-feedback reaction on the user's original message (replaces the 👀 set at capture time).
+        if (event.telegramMessageId() != null) {
+            try {
+                telegramApiClient.setMessageReaction(event.telegramChatId(), event.telegramMessageId(),
+                        event.success() ? DONE_REACTION : FAILED_REACTION);
+            } catch (RuntimeException exception) {
+                log.warn("Reaction update failed for item {}: {}", event.itemId(), exception.getMessage());
+            }
+        }
+        if (!event.success()) {
+            return;
+        }
         try {
             List<MemoryUnitResponse> related = connectionService.findRelatedToItem(event.itemId(), MAX_RELATED);
-            if (related.isEmpty()) {
-                return;
+            if (!related.isEmpty()) {
+                telegramApiClient.sendMessage(event.telegramChatId(), format(related));
             }
-            telegramApiClient.sendMessage(event.telegramChatId(), format(related));
         } catch (RuntimeException exception) {
             log.warn("Connections notification failed for item {}: {}", event.itemId(), exception.getMessage());
         }

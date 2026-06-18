@@ -127,7 +127,8 @@ public class InboxItemService {
             item.setNextAttemptAt(null);
             InboxItem savedItem = inboxItemRepository.save(item);
             updateMemoryUnitEmbeddingsIfAvailable(savedItem);
-            eventPublisher.publishEvent(new InboxItemProcessedEvent(savedItem.getId(), savedItem.getTelegramChatId()));
+            eventPublisher.publishEvent(new InboxItemProcessedEvent(
+                    savedItem.getId(), savedItem.getTelegramChatId(), savedItem.getTelegramMessageId(), true));
             return inboxItemMapper.toResponse(savedItem);
         } catch (RuntimeException exception) {
             item.setStatus(InboxItemStatus.FAILED_AI);
@@ -136,6 +137,8 @@ public class InboxItemService {
             InboxItem savedItem = inboxItemRepository.save(item);
             log.warn("AI processing failed for inbox item {} (attempt {}): {}",
                     id, item.getProcessingAttempts(), exception.getMessage());
+            eventPublisher.publishEvent(new InboxItemProcessedEvent(
+                    savedItem.getId(), savedItem.getTelegramChatId(), savedItem.getTelegramMessageId(), false));
             return inboxItemMapper.toResponse(savedItem);
         }
     }

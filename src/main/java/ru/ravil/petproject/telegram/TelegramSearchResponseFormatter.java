@@ -3,8 +3,11 @@ package ru.ravil.petproject.telegram;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import ru.ravil.petproject.dto.MemoryUnitResponse;
@@ -33,23 +36,55 @@ public class TelegramSearchResponseFormatter {
         }
 
         if (answer.isPresent() && answer.get().hasText()) {
-            return formatAnswer(answer.get());
+            return formatAnswer(query, answer.get());
         }
 
         return formatItems(items);
     }
 
-    private String formatAnswer(MemoryAnswer answer) {
-        List<MemoryUnitResponse> sources = answer.sources().isEmpty() ? List.of() : answer.sources();
-        if (sources.isEmpty()) {
-            return "Ответ: " + answer.text();
+    /**
+     * Conversational answer: just the answer text by default. Sources are appended only when the user
+     * explicitly asks (query mentions "источник"), and then as the original raw record(s) + date,
+     * deduplicated by source message (so one big note doesn't list every extracted unit) and without
+     * type/tags.
+     */
+    private String formatAnswer(String query, MemoryAnswer answer) {
+        if (!wantsSources(query) || answer.sources().isEmpty()) {
+            return answer.text();
+        }
+        String sources = formatSources(answer.sources());
+        return sources.isBlank() ? answer.text() : answer.text() + "\n\n" + sources;
+    }
+
+    private boolean wantsSources(String query) {
+        return query != null && query.toLowerCase(Locale.ROOT).contains("источник");
+    }
+
+    private String formatSources(List<MemoryUnitResponse> sources) {
+        LinkedHashMap<UUID, MemoryUnitResponse> byMessage = new LinkedHashMap<>();
+        for (MemoryUnitResponse source : sources) {
+            UUID key = source.inboxItemId() != null ? source.inboxItemId() : source.id();
+            byMessage.putIfAbsent(key, source);
         }
 
-        return new StringBuilder("Ответ: ")
-                .append(answer.text())
-                .append("\n\nИсточники:\n")
-                .append(formatNumberedItems(sources).stripLeading())
-                .toString();
+        StringBuilder builder = new StringBuilder(byMessage.size() == 1 ? "Источник:" : "Источники:");
+        for (MemoryUnitResponse source : byMessage.values()) {
+            builder.append("\n• ").append(sourceText(source));
+            String date = formatCreatedAt(source);
+            if (!"-".equals(date)) {
+                builder.append(" — ").append(date);
+            }
+        }
+        return builder.toString();
+    }
+
+    private String sourceText(MemoryUnitResponse source) {
+        String raw = StringUtils.hasText(source.sourceRawText()) ? source.sourceRawText() : source.title();
+        if (!StringUtils.hasText(raw)) {
+            return "(запись)";
+        }
+        raw = raw.strip();
+        return raw.length() <= 200 ? "«" + raw + "»" : "«" + raw.substring(0, 197) + "...»";
     }
 
     private String formatItems(List<MemoryUnitResponse> items) {

@@ -48,29 +48,54 @@ class TelegramSearchResponseFormatterTest {
     }
 
     @Test
-    void formatAnswerWithSources() {
+    void answerHasNoSourcesByDefault() {
         MemoryUnitResponse source = response(
-                "Купил USB-C кабель в DNS",
-                "Куплен USB-C кабель в DNS",
-                MemoryUnitType.NOTE,
-                Set.of("dns"),
-                "2026-06-13T08:00:00Z"
-        );
+                "Купил USB-C кабель в DNS", "Куплен USB-C кабель в DNS",
+                MemoryUnitType.NOTE, Set.of("dns"), "2026-06-13T08:00:00Z");
 
         String result = formatter.format(
                 "где я купил кабель?",
                 List.of(source),
-                Optional.of(new MemoryAnswer("USB-C кабель куплен в DNS.", List.of(source), 0.9))
-        );
+                Optional.of(new MemoryAnswer("USB-C кабель куплен в DNS.", List.of(source), 0.9)));
+
+        assertThat(result).isEqualTo("USB-C кабель куплен в DNS.");
+    }
+
+    @Test
+    void answerShowsRawSourceWhenRequested() {
+        MemoryUnitResponse source = response(
+                "Купил USB-C кабель в DNS", "Куплен USB-C кабель в DNS",
+                MemoryUnitType.NOTE, Set.of("dns"), "2026-06-13T08:00:00Z");
+
+        String result = formatter.format(
+                "источник где купил кабель",
+                List.of(source),
+                Optional.of(new MemoryAnswer("USB-C кабель куплен в DNS.", List.of(source), 0.9)));
 
         assertThat(result).isEqualTo("""
-                Ответ: USB-C кабель куплен в DNS.
+                USB-C кабель куплен в DNS.
 
-                Источники:
-                1. Куплен USB-C кабель в DNS
-                   Тип: NOTE
-                   Добавлено: сегодня
-                   Теги: dns""");
+                Источник:
+                • «Купил USB-C кабель в DNS» — сегодня""");
+    }
+
+    @Test
+    void dedupesSourcesFromSameMessage() {
+        // Both units come from one big message (same inboxItemId in the test helper) — must collapse to one source.
+        MemoryUnitResponse gift = response(
+                "Мама подарила часы Casio на 20 лет, потом я их потерял", "Мама подарила часы Casio",
+                MemoryUnitType.EVENT, Set.of("часы"), "2026-06-13T08:00:00Z");
+        MemoryUnitResponse lost = response(
+                "Мама подарила часы Casio на 20 лет, потом я их потерял", "Потерял часы Casio",
+                MemoryUnitType.EVENT, Set.of("часы"), "2026-06-13T08:00:00Z");
+
+        String result = formatter.format(
+                "источник про часы касио",
+                List.of(gift, lost),
+                Optional.of(new MemoryAnswer("Casio подарила мама на 20-летие, позже потеряны.", List.of(gift, lost), 0.9)));
+
+        assertThat(result).contains("Источник:").doesNotContain("Источники:");
+        assertThat(result.split("•", -1)).hasSize(2); // exactly one source bullet
     }
 
     private static MemoryUnitResponse response(

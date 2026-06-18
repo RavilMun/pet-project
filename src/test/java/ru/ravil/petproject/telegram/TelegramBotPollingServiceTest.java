@@ -91,7 +91,7 @@ class TelegramBotPollingServiceTest {
         org.assertj.core.api.Assertions.assertThat(request.telegramChatId()).isEqualTo(42);
         org.assertj.core.api.Assertions.assertThat(request.telegramMessageId()).isEqualTo(1);
         org.assertj.core.api.Assertions.assertThat(request.tags()).isEmpty();
-        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: remember docs\nТип: NOTE");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
     }
 
     @Test
@@ -103,7 +103,7 @@ class TelegramBotPollingServiceTest {
         service.poll();
 
         verify(imageIngestionService).ingest(42L, "file_42", "на чеке итого 1500", 1L);
-        verify(telegramApiClient).sendMessage(42, "Сохранил картинку, разберу позже.");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
         verify(inboxItemService, never()).captureAsync(any(CreateInboxItemRequest.class));
     }
 
@@ -116,7 +116,7 @@ class TelegramBotPollingServiceTest {
         service.poll();
 
         verify(voiceIngestionService).ingest(42L, "voice_42", 1L);
-        verify(telegramApiClient).sendMessage(42, "Сохранил голосовое, разберу позже.");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
         verify(inboxItemService, never()).captureAsync(any(CreateInboxItemRequest.class));
     }
 
@@ -153,7 +153,7 @@ class TelegramBotPollingServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
         );
-        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: " + text.substring(0, 77) + "...\nТип: NOTE");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
     }
 
     @Test
@@ -187,7 +187,7 @@ class TelegramBotPollingServiceTest {
         service.poll();
 
         verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
-        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: remember docs\nТип: NOTE");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
     }
 
     @Test
@@ -303,7 +303,7 @@ class TelegramBotPollingServiceTest {
         );
         verify(aiTelegramIntentDetector, never()).detect(anyString());
         verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
-        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: найди pgvector\nТип: NOTE");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
     }
 
     @Test
@@ -412,13 +412,8 @@ class TelegramBotPollingServiceTest {
         service.poll();
 
         verify(inboxItemSearchService).search("купил кабель", Set.of(), Set.of(), SearchPeriod.ALL, 10);
-        verify(telegramApiClient).sendMessage(42, """
-                Ответ: USB-C кабель куплен в магазине DNS.
-
-                Источники:
-                1. Купил USB-C кабель в магазине DNS
-                   Тип: NOTE
-                   Добавлено: вчера""");
+        // No "источник" in the query → conversational answer only, without a sources block.
+        verify(telegramApiClient).sendMessage(42, "USB-C кабель куплен в магазине DNS.");
     }
 
     @Test
@@ -451,7 +446,7 @@ class TelegramBotPollingServiceTest {
         verify(aiTelegramIntentDetector).detect("напомни оплатить интернет завтра");
         verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
         verify(inboxItemSearchService, never()).search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
-        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: напомни оплатить интернет завтра\nТип: NOTE");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
     }
 
     @Test
@@ -490,7 +485,7 @@ class TelegramBotPollingServiceTest {
 
         verify(inboxItemSearchService, never()).search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
         verify(inboxItemService).captureAsync(any(CreateInboxItemRequest.class));
-        verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: /search\nТип: NOTE");
+        verify(telegramApiClient).setMessageReaction(42L, 1L, "👀");
     }
 
     @Test

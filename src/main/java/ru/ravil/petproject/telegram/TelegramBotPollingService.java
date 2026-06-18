@@ -147,7 +147,7 @@ public class TelegramBotPollingService {
         TelegramPhotoSize photo = message.largestPhoto();
         if (photo != null) {
             imageIngestionService.ingest(chatId, photo.fileId(), message.caption(), message.messageId());
-            telegramApiClient.sendMessage(chatId, "Сохранил картинку, разберу позже.");
+            react(chatId, message.messageId(), PROCESSING_REACTION);
             return;
         }
 
@@ -159,7 +159,7 @@ public class TelegramBotPollingService {
                 return;
             }
             voiceIngestionService.ingest(chatId, voice.fileId(), message.messageId());
-            telegramApiClient.sendMessage(chatId, "Сохранил голосовое, разберу позже.");
+            react(chatId, message.messageId(), PROCESSING_REACTION);
             return;
         }
 
@@ -206,7 +206,7 @@ public class TelegramBotPollingService {
             return;
         }
 
-        InboxItemResponse savedItem = inboxItemService.captureAsync(new CreateInboxItemRequest(
+        inboxItemService.captureAsync(new CreateInboxItemRequest(
                 normalizedText,
                 null,
                 null,
@@ -219,7 +219,7 @@ public class TelegramBotPollingService {
                 Set.of()
         ));
 
-        telegramApiClient.sendMessage(chatId, formatSavedItem(savedItem));
+        react(chatId, message.messageId(), PROCESSING_REACTION);
     }
 
     private TelegramIntent detectIntent(String text) {
@@ -300,6 +300,19 @@ public class TelegramBotPollingService {
 
     private static final int MAX_RESENT_PHOTOS = 3;
     private static final int MAX_VOICE_SECONDS = 600;
+    private static final String PROCESSING_REACTION = "👀";
+
+    /** Lightweight "in progress" feedback on the user's message; completion 👍/👎 set on the processed event. */
+    private void react(long chatId, Long messageId, String emoji) {
+        if (messageId == null) {
+            return;
+        }
+        try {
+            telegramApiClient.setMessageReaction(chatId, messageId, emoji);
+        } catch (RuntimeException exception) {
+            log.warn("Reaction failed for chat {} message {}: {}", chatId, messageId, exception.getMessage());
+        }
+    }
 
     /** Re-sends the actual photo(s) behind image-backed search hits via {@code sendPhoto(file_id)}. */
     private void resendPhotos(long chatId, List<MemoryUnitResponse> items) {
@@ -587,16 +600,4 @@ public class TelegramBotPollingService {
         return text.substring(0, 77) + "...";
     }
 
-    private String formatSavedItem(InboxItemResponse item) {
-        StringBuilder builder = new StringBuilder("Сохранил, разберу позже: ")
-                .append(displayText(item))
-                .append("\nТип: ")
-                .append(item.type());
-
-        if (!item.tags().isEmpty()) {
-            builder.append("\nТеги: ").append(String.join(", ", item.tags()));
-        }
-
-        return builder.toString();
-    }
 }

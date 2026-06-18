@@ -2,6 +2,7 @@ package ru.ravil.petproject.telegram;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -49,6 +50,23 @@ public class TelegramApiClient {
         restClient.post()
                 .uri("/sendMessage")
                 .body(new TelegramSendMessageRequest(chatId, text))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /**
+     * Sets a single emoji reaction on a message (replaces any previous bot reaction). Used as
+     * lightweight capture feedback: 👀 in progress → 👍 done / 👎 failed. Only emojis from Telegram's
+     * allowed reaction set work (⏳/✅/❌ are not allowed reactions).
+     */
+    public void setMessageReaction(long chatId, long messageId, String emoji) {
+        restClient.post()
+                .uri("/setMessageReaction")
+                .body(Map.of(
+                        "chat_id", chatId,
+                        "message_id", messageId,
+                        "reaction", List.of(Map.of("type", "emoji", "emoji", emoji))
+                ))
                 .retrieve()
                 .toBodilessEntity();
     }
