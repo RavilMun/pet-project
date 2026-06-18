@@ -510,6 +510,9 @@ public class InboxItemSearchService {
         if (queryToken.length() >= 4 && (fieldToken.contains(queryToken) || queryToken.contains(fieldToken))) {
             return true;
         }
+        if (stemMatches(queryToken, fieldToken)) {
+            return true;
+        }
 
         int commonPrefixLength = commonPrefixLength(queryToken, fieldToken);
         int minLength = Math.min(queryToken.length(), fieldToken.length());
@@ -582,6 +585,9 @@ public class InboxItemSearchService {
         if (queryToken.equals(fieldToken)) {
             return exactScore;
         }
+        if (stemMatches(queryToken, fieldToken)) {
+            return prefixScore;
+        }
 
         int commonPrefixLength = commonPrefixLength(queryToken, fieldToken);
         int minLength = Math.min(queryToken.length(), fieldToken.length());
@@ -589,6 +595,19 @@ public class InboxItemSearchService {
             return prefixScore;
         }
         return 0;
+    }
+
+    /**
+     * Morphological token match via the Russian stemmer, gated by {@code search.ranking.stemming-enabled}
+     * (off by default). When enabled, two tokens whose stems coincide ("кресла"/"кресло" → "кресл")
+     * count as a match — replacing the crude {@code commonPrefixLength} heuristic for inflected forms.
+     */
+    private boolean stemMatches(String queryToken, String fieldToken) {
+        if (!ranking.stemmingEnabled()) {
+            return false;
+        }
+        String queryStem = RussianStemmer.stem(queryToken);
+        return queryStem.length() >= 3 && queryStem.equals(RussianStemmer.stem(fieldToken));
     }
 
     private Set<String> normalizeTags(Set<String> tags) {

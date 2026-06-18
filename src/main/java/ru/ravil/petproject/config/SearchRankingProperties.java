@@ -15,6 +15,7 @@ public record SearchRankingProperties(
         int weakLexicalScore,
         int rerankWindow,
         double lexicalCutoffRatioHigh,
-        double lexicalCutoffRatioLow
+        double lexicalCutoffRatioLow,
+        boolean stemmingEnabled
 ) {
 }

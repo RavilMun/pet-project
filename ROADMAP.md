@@ -51,8 +51,14 @@
 ## Фаза 3 — Качество поиска и ответов (M, итеративно, мерить eval'ом)
 
 - [x] **3.1** Тюнинг-дайлы ранкера вынесены в `SearchRankingProperties` (`search.ranking.*`): vector bonus/penalty, min-relevance/weak-lexical cutoffs, rerank-window, lexical-cutoff ratios. Дефолты = прежним константам (тест-набор зелёный, поведение не изменилось) → теперь можно свипать eval'ом без перекомпиляции. Тонкие per-field веса `score()` пока в коде.
-- [ ] **3.2** Тюнинг reranker'а на реальном eval (окно, порог, модель).
-- [ ] **3.3** Морфология вместо `commonPrefixLength` для русского (стемминг в скоринге).
+- [ ] **3.2** Тюнинг reranker'а на реальном eval (окно, порог, модель). **План A/B (после isolated-baseline):**
+  - baseline = текущий isolated-прогон (rerank off).
+  - `OPENAI_RERANK_ENABLED=true` + свип `SEARCH_RERANK_WINDOW` ∈ {10, 20, 30} в `isolated`-режиме, сравнить accuracy с baseline. Каждый прогон сразу копировать в `report-rerank-w<N>-isolated.json` (report.json затирается).
+  - Решение по дефолту: включать rerank только если прирост стабильно > шума судьи; иначе оставить off.
+- [~] **3.3** Морфология вместо `commonPrefixLength` для русского — **код написан, ждёт компиляции + eval-валидации.**
+  - `RussianStemmer` (бездепендентный порт Snowball ru) + unit-тест на эталонные склонения/идемпотентность/защиту коротких слов.
+  - Подключён в `tokenMatchScore` и `anchorMatchesToken` через `stemMatches`, загейчен `search.ranking.stemming-enabled` (default **false** → поведение не меняется, текущие тесты зелёные).
+  - **План валидации:** прогнать eval с `SEARCH_STEMMING_ENABLED=true` (isolated) против baseline; копировать в `report-stemming-isolated.json`. Если стемминг даёт ложные слияния (разные слова с общим стемом) и проседает accuracy — откатить флаг/ужесточить (min stem length, не трогать anchor).
 
 ## Фаза 4 — Жизненный цикл памяти (M)
 
