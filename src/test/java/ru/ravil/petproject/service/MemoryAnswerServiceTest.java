@@ -170,6 +170,7 @@ class MemoryAnswerServiceTest {
                 rawText,
                 null,
                 null,
+                null,
                 dateTime,
                 dateTime,
                 dateTime

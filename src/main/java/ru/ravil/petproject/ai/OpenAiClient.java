@@ -71,6 +71,46 @@ public class OpenAiClient {
         return message.content();
     }
 
+    private static final String VISION_SYSTEM_PROMPT = """
+            You describe images for a private personal memory assistant.
+            Describe what is shown concisely but usefully for later search, and transcribe any visible text verbatim (OCR).
+            Answer in the same language as any visible text, otherwise in Russian. Return plain text, no markdown.
+            """;
+
+    public String describeImage(String base64Image, String mimeType) {
+        Map<String, Object> imagePart = Map.of(
+                "type", "image_url",
+                "image_url", Map.of("url", "data:" + mimeType + ";base64," + base64Image)
+        );
+        Map<String, Object> textPart = Map.of(
+                "type", "text",
+                "text", "Опиши изображение и распознай текст на нём."
+        );
+        Map<String, Object> body = Map.of(
+                "model", model,
+                "messages", List.of(
+                        Map.of("role", "system", "content", VISION_SYSTEM_PROMPT),
+                        Map.of("role", "user", "content", List.of(textPart, imagePart))
+                ),
+                "temperature", 0.2
+        );
+
+        OpenAiChatCompletionResponse response = executeWithRetry("vision", () -> restClient.post()
+                .uri("/chat/completions")
+                .body(body)
+                .retrieve()
+                .body(OpenAiChatCompletionResponse.class));
+
+        if (response == null || response.choices() == null || response.choices().isEmpty()) {
+            throw new IllegalStateException("OpenAI vision response has no choices");
+        }
+        OpenAiChatMessage message = response.choices().getFirst().message();
+        if (message == null || message.content() == null) {
+            throw new IllegalStateException("OpenAI vision response has no message content");
+        }
+        return message.content();
+    }
+
     public List<Double> embed(String input) {
         OpenAiEmbeddingRequest request = new OpenAiEmbeddingRequest(embeddingModel, input);
 

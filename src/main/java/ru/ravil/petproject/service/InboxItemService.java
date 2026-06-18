@@ -85,8 +85,19 @@ public class InboxItemService {
      * of rolling back the capture.
      */
     public InboxItemResponse create(CreateInboxItemRequest request) {
+        return create(request, null, null);
+    }
+
+    /**
+     * Same as {@link #create(CreateInboxItemRequest)} but attaches an image reference
+     * (e.g. a Telegram {@code file_id}) so the saved item can be re-sent on retrieval.
+     * The image's vision description is expected to already be in {@code request.rawText()}.
+     */
+    public InboxItemResponse create(CreateInboxItemRequest request, String imageFileId, String mediaType) {
         List<ExtractedLink> links = linkExtractor.extract(request.rawText());
         InboxItem rawItem = buildRawItem(request, links);
+        rawItem.setImageFileId(imageFileId);
+        rawItem.setMediaType(mediaType);
         InboxItem savedRaw = inboxItemRepository.save(rawItem);
         return selfProvider.getObject().process(savedRaw.getId(), request);
     }

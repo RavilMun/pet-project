@@ -96,6 +96,7 @@ class TelegramSearchResponseFormatterTest {
                 rawText,
                 null,
                 null,
+                null,
                 dateTime,
                 dateTime,
                 dateTime

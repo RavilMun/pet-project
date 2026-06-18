@@ -47,6 +47,7 @@ class TelegramBotPollingServiceTest {
     private InboxItemEmbeddingBackfillService embeddingBackfillService;
     private MemoryAnswerService memoryAnswerService;
     private MemoryTaskService memoryTaskService;
+    private TelegramImageIngestionService imageIngestionService;
     private AiTelegramIntentDetector aiTelegramIntentDetector;
 
     @BeforeEach
@@ -57,6 +58,7 @@ class TelegramBotPollingServiceTest {
         embeddingBackfillService = Mockito.mock(InboxItemEmbeddingBackfillService.class);
         memoryAnswerService = Mockito.mock(MemoryAnswerService.class);
         memoryTaskService = Mockito.mock(MemoryTaskService.class);
+        imageIngestionService = Mockito.mock(TelegramImageIngestionService.class);
         aiTelegramIntentDetector = Mockito.mock(AiTelegramIntentDetector.class);
         when(aiTelegramIntentDetector.detect(anyString())).thenReturn(TelegramIntent.unknown());
         when(aiTelegramIntentDetector.detectAny(anyString())).thenReturn(TelegramIntent.unknown());
@@ -82,6 +84,19 @@ class TelegramBotPollingServiceTest {
         org.assertj.core.api.Assertions.assertThat(request.telegramMessageId()).isEqualTo(1);
         org.assertj.core.api.Assertions.assertThat(request.tags()).isEmpty();
         verify(telegramApiClient).sendMessage(42, "Сохранил, разберу позже: remember docs\nТип: NOTE");
+    }
+
+    @Test
+    void pollDelegatesPhotoToImageIngestionAndAcks() {
+        TelegramBotPollingService service = service(null);
+        TelegramUpdate update = updateWithPhoto(100, 42, "на чеке итого 1500", "file_42");
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update));
+
+        service.poll();
+
+        verify(imageIngestionService).ingest(42L, "file_42", "на чеке итого 1500", 1L);
+        verify(telegramApiClient).sendMessage(42, "Сохранил картинку, разберу позже.");
+        verify(inboxItemService, never()).captureAsync(any(CreateInboxItemRequest.class));
     }
 
     @Test
@@ -561,12 +576,22 @@ class TelegramBotPollingServiceTest {
                 )),
                 embeddingBackfillService,
                 memoryAnswerService,
-                memoryTaskService
+                memoryTaskService,
+                imageIngestionService
         );
     }
 
     private static TelegramUpdate update(long updateId, long chatId, String text) {
-        return new TelegramUpdate(updateId, new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), text));
+        return new TelegramUpdate(updateId, new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), text, null, null));
+    }
+
+    private static TelegramUpdate updateWithPhoto(long updateId, long chatId, String caption, String fileId) {
+        List<TelegramPhotoSize> photo = List.of(
+                new TelegramPhotoSize("small", "u1", 90, 90, 1000),
+                new TelegramPhotoSize(fileId, "u2", 800, 800, 50000)
+        );
+        return new TelegramUpdate(updateId,
+                new TelegramMessage(1L, new TelegramChat(chatId, "private", "Ravil", "ravil"), null, photo, caption));
     }
 
     private static InboxItemResponse response() {
@@ -613,6 +638,7 @@ class TelegramBotPollingServiceTest {
                 false,
                 1.0,
                 sourceRawText,
+                null,
                 null,
                 null,
                 dateTime,

@@ -582,3 +582,17 @@ databaseChangeLog:
               - column:
                   name: completed_at
                   type: timestamp with time zone
+
+  - changeSet:
+      id: 013-add-inbox-item-image
+      author: codex
+      changes:
+        - addColumn:
+            tableName: inbox_items
+            columns:
+              - column:
+                  name: image_file_id
+                  type: varchar(255)
+              - column:
+                  name: media_type
+                  type: varchar(64)

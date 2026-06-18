@@ -49,6 +49,7 @@ public class TelegramBotPollingService {
     private final InboxItemEmbeddingBackfillService embeddingBackfillService;
     private final MemoryAnswerService memoryAnswerService;
     private final MemoryTaskService memoryTaskService;
+    private final TelegramImageIngestionService imageIngestionService;
     private final AtomicBoolean polling = new AtomicBoolean(false);
     private final AtomicLong nextOffset = new AtomicLong(0);
     private final Map<Long, List<OpenTask>> lastListedTasks = new ConcurrentHashMap<>();
@@ -64,7 +65,8 @@ public class TelegramBotPollingService {
             TelegramSearchResponseFormatter searchResponseFormatter,
             InboxItemEmbeddingBackfillService embeddingBackfillService,
             MemoryAnswerService memoryAnswerService,
-            MemoryTaskService memoryTaskService
+            MemoryTaskService memoryTaskService,
+            TelegramImageIngestionService imageIngestionService
     ) {
         this.telegramApiClient = telegramApiClient;
         this.properties = properties;
@@ -77,6 +79,7 @@ public class TelegramBotPollingService {
         this.embeddingBackfillService = embeddingBackfillService;
         this.memoryAnswerService = memoryAnswerService;
         this.memoryTaskService = memoryTaskService;
+        this.imageIngestionService = imageIngestionService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -123,6 +126,13 @@ public class TelegramBotPollingService {
         if (!isAllowed(chatId)) {
             log.warn("Ignoring Telegram message from unauthorized chat {}", chatId);
             telegramApiClient.sendMessage(chatId, "Этот бот пока приватный.");
+            return;
+        }
+
+        TelegramPhotoSize photo = message.largestPhoto();
+        if (photo != null) {
+            imageIngestionService.ingest(chatId, photo.fileId(), message.caption(), message.messageId());
+            telegramApiClient.sendMessage(chatId, "Сохранил картинку, разберу позже.");
             return;
         }
 
@@ -240,10 +250,29 @@ public class TelegramBotPollingService {
                                 memoryAnswerService.answer(originalText, items)
                         )
                 );
+                resendPhotos(chatId, items);
                 yield true;
             }
             case UNKNOWN, CAPTURE -> false;
         };
+    }
+
+    private static final int MAX_RESENT_PHOTOS = 3;
+
+    /** Re-sends the actual photo(s) behind image-backed search hits via {@code sendPhoto(file_id)}. */
+    private void resendPhotos(long chatId, List<MemoryUnitResponse> items) {
+        items.stream()
+                .filter(item -> StringUtils.hasText(item.imageFileId()))
+                .map(MemoryUnitResponse::imageFileId)
+                .distinct()
+                .limit(MAX_RESENT_PHOTOS)
+                .forEach(fileId -> {
+                    try {
+                        telegramApiClient.sendPhoto(chatId, fileId, null);
+                    } catch (RuntimeException exception) {
+                        log.warn("Failed to resend photo {} to chat {}: {}", fileId, chatId, exception.getMessage());
+                    }
+                });
     }
 
     private boolean isAllowed(long chatId) {

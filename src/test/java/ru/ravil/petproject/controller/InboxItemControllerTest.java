@@ -284,6 +284,7 @@ class InboxItemControllerTest {
                 sourceRawText,
                 null,
                 null,
+                null,
                 dateTime,
                 dateTime,
                 dateTime

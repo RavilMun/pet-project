@@ -32,6 +32,7 @@ public class MemoryUnitMapper {
                 unit.isActionable(),
                 unit.getConfidence(),
                 unit.getSourceQuote(),
+                item == null ? null : item.getImageFileId(),
                 unit.getOccurredAt(),
                 unit.getDueAt(),
                 item == null ? null : item.getCreatedAt(),

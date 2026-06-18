@@ -71,12 +71,13 @@
 
 **Ключевой приём (почему ложится дёшево):** поиск/ответ работают над текстом `MemoryUnit`. Если при приёме картинку прогнать через vision-модель → описание + OCR-текст и положить как текст `MemoryUnit`, изображение становится искомым **без изменений в поиске/Q&A**. `openai.model=gpt-4.1-mini` уже vision-capable — менять модель не нужно, только форму запроса (image content-part).
 
-- [ ] **6.1 MVP (Telegram-only):**
-  - `OpenAiClient.describeImage(bytes/url)` — vision-вызов → описание + OCR-текст (с тем же retry-слоем 1.3).
-  - Приём фото в Telegram: расширить `TelegramMessage` полями `photo` (массив `PhotoSize`) и `caption`; брать самый крупный размер. `TelegramApiClient.getFile(fileId)` + скачивание байтов (`https://api.telegram.org/file/bot<token>/<file_path>`).
-  - **Без бинарного хранилища:** хранить Telegram `file_id` (+ описание как текст). На выдаче пере-слать фото `sendPhoto(file_id)` (Telegram держит file_id долго).
-  - Пайплайн: `rawText` = подпись или AI-описание (см. constraint ниже); дальше classify→extract→embed как обычно → ищется и отвечается существующим кодом. Капча — через уже готовый async (1.2).
-  - Схема: `inbox_items.image_file_id` (+ `media_type`); ослабить/обойти `raw_text NOT NULL` для фото без подписи (класть описание).
+- [x] **6.1 MVP (Telegram-only)** — **сделано** (компилируется, весь тест-набор зелёный):
+  - `OpenAiClient.describeImage(base64, mimeType)` — vision-вызов (gpt-4.1-mini) → описание + OCR-текст, тот же retry-слой 1.3. Обёртка `AiVisionService` (ObjectProvider-гейт, degrade при `openai.enabled=false`).
+  - Приём фото в Telegram: `TelegramMessage` + `photo` (массив `TelegramPhotoSize`) и `caption`; `largestPhoto()` берёт самый крупный размер. `TelegramApiClient.getFile(fileId)` + `downloadFile(filePath)` (второй RestClient на `https://api.telegram.org/file/bot<token>`).
+  - **Без бинарного хранилища:** хранится Telegram `file_id` + текст-описание. На выдаче SEARCH пере-слать фото `sendPhoto(file_id)` (до 3 уникальных хитов).
+  - Пайплайн: `TelegramImageIngestionService.ingest` (`@Async`, гейт `telegram.bot.enabled`) → download → base64 → vision → `InboxItemService.create(request, fileId, "image/jpeg")` с тегом `image`; `rawText` = подпись + описание (или плейсхолдер «Изображение», если оба пусты) → дальше classify→extract→embed как обычно, ищется существующим кодом. Капча мгновенная: «Сохранил картинку, разберу позже».
+  - Схема: `inbox_items.image_file_id` (+ `media_type`) — миграция `013`. `raw_text NOT NULL` соблюдается за счёт плейсхолдера. `MemoryUnitResponse.imageFileId` прокинут из `item` маппером.
+  - Отложено: реальный E2E-прогон с живым ботом/ключом; отдельный `MemoryUnitType`/фильтр для медиа (пока тег `image`).
 - [ ] **6.2 Полный вариант (REST + хранилище):** multipart-загрузка в REST; бинарное хранилище (ФС-путь в БД или `bytea`) + эндпоинт отдачи байтов. Заметно больше MVP.
 - [ ] **6.3 (на потом, опционально):** CLIP-эмбеддинги изображений для визуального «найди похожую картинку» — отдельный класс, для текстового поиска по описанию не нужен.
 

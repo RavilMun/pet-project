@@ -17,6 +17,7 @@ public record MemoryUnitResponse(
         boolean actionable,
         double confidence,
         String sourceQuote,
+        String imageFileId,
         OffsetDateTime occurredAt,
         OffsetDateTime dueAt,
         OffsetDateTime sourceCreatedAt,
