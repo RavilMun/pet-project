@@ -98,7 +98,9 @@ Liquibase changelog at `src/main/resources/db/changelog/db.changelog-master.yaml
 ### Testing structure
 
 - `src/test/java/.../*Test.java` — unit tests, most repository/integration tests using Testcontainers Postgres (`@Import(TestcontainersConfiguration.class)`).
-- `eval/` — the `memory-eval` Gradle task's harness: loads YAML scenarios (`src/test/resources/memory-eval/*.yaml`, each with `save` messages and `questions` with expected/forbidden facts), replays them through the real ingestion+search+answer pipeline, and optionally judges answers with `OpenAiMemoryEvalJudge` (else `DisabledMemoryEvalJudge`).
+- `eval/` — two regression layers for the search/answer pipeline:
+  - `RetrievalRegressionGuardTest` — **untagged, runs in the normal `test` task on every build.** A cheap, deterministic ranking guard: seeds curated units into Testcontainers Postgres and asserts `InboxItemSearchService.search` recall / similar-object disambiguation / type & tag filters with OpenAI off (lexical path). No API, no judge — the free safety net against `score()`/cutoff/FTS-query regressions (Phase 5.1).
+  - the `memory-eval` Gradle task's harness (`memory-eval`-tagged, excluded from `test`): loads YAML scenarios (`src/test/resources/memory-eval/*.yaml`, each with `save` messages and `questions` with expected/forbidden facts), replays them through the real ingestion+search+answer pipeline, and optionally judges answers with `OpenAiMemoryEvalJudge` (else `DisabledMemoryEvalJudge`). Run nightly / on demand via `.github/workflows/memory-eval.yml` (paid: real OpenAI + judge).
 - `live/` — `live-openai`-tagged smoke tests that hit the real OpenAI API; only runnable via the `liveTest` task with `RUN_LIVE_GPT_TESTS=true` and a real `OPENAI_API_KEY`.
 
 ### Configuration

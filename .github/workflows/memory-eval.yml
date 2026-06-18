@@ -1,0 +1,50 @@
+name: memory-eval
+
+# Full semantic evaluation of the search/answer pipeline (paid: real OpenAI + LLM judge).
+# Runs nightly and on manual dispatch — NOT on every push (it is slow and costs tokens).
+# Requires repository secrets OPENAI_API_KEY (and the runner must have Docker for Testcontainers).
+# The cheap, deterministic ranking guard runs in the normal `test` task instead, on every build.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 03:00 UTC nightly
+  workflow_dispatch:
+    inputs:
+      databaseMode:
+        description: "isolated (clean per case) or accumulated"
+        default: "isolated"
+        type: choice
+        options: ["isolated", "accumulated"]
+      judge:
+        description: "Enable LLM-as-judge scoring"
+        default: true
+        type: boolean
+
+jobs:
+  memory-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Run memoryEval
+        env:
+          OPENAI_ENABLED: "true"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MEMORY_EVAL_DATABASE_MODE: ${{ inputs.databaseMode || 'isolated' }}
+          MEMORY_EVAL_JUDGE_ENABLED: ${{ inputs.judge == false && 'false' || 'true' }}
+        run: ./gradlew memoryEval --no-daemon
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-eval-report
+          path: build/reports/memory-eval/
+          if-no-files-found: warn
