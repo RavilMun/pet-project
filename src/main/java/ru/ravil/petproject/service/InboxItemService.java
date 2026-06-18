@@ -57,6 +57,8 @@ public class InboxItemService {
     private final MemoryUnitRepository memoryUnitRepository;
     private final ObjectProvider<InboxItemService> selfProvider;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final LinkContentService linkContentService;
+    private final ru.ravil.petproject.ai.AiArticleSummaryService aiArticleSummaryService;
 
     public InboxItemService(
             InboxItemRepository inboxItemRepository,
@@ -67,7 +69,9 @@ public class InboxItemService {
             AiMemoryUnitExtractionService aiMemoryUnitExtractionService,
             ObjectProvider<AiEmbeddingService> aiEmbeddingServiceProvider,
             ObjectProvider<InboxItemService> selfProvider,
-            org.springframework.context.ApplicationEventPublisher eventPublisher
+            org.springframework.context.ApplicationEventPublisher eventPublisher,
+            LinkContentService linkContentService,
+            ru.ravil.petproject.ai.AiArticleSummaryService aiArticleSummaryService
     ) {
         this.inboxItemRepository = inboxItemRepository;
         this.memoryUnitRepository = memoryUnitRepository;
@@ -78,6 +82,8 @@ public class InboxItemService {
         this.aiEmbeddingServiceProvider = aiEmbeddingServiceProvider;
         this.selfProvider = selfProvider;
         this.eventPublisher = eventPublisher;
+        this.linkContentService = linkContentService;
+        this.aiArticleSummaryService = aiArticleSummaryService;
     }
 
     /**
@@ -116,6 +122,7 @@ public class InboxItemService {
             List<ExtractedLink> links = linkExtractor.extract(item.getRawText());
             applyClassification(item, request, classification, links);
             rebuildMemoryUnits(item, classification);
+            enrichWithArticle(item, links);
             item.setLastProcessingError(null);
             item.setNextAttemptAt(null);
             InboxItem savedItem = inboxItemRepository.save(item);
@@ -417,6 +424,51 @@ public class InboxItemService {
         slot.setValueType(result.valueType() == null ? MemorySlotValueType.TEXT : result.valueType());
         slot.setConfidence(Math.max(0.0d, Math.min(result.confidence(), 1.0d)));
         return Optional.of(slot);
+    }
+
+    /**
+     * If the note contains a link, fetch the page, summarize it and attach an ARTICLE memory unit so
+     * the link becomes searchable by its actual content (Feature 8.3). Best-effort: failures (no AI,
+     * fetch error, summary error) leave the item with just its link tag.
+     */
+    private void enrichWithArticle(InboxItem item, List<ExtractedLink> links) {
+        if (links.isEmpty() || !aiArticleSummaryService.isAvailable()) {
+            return;
+        }
+        ExtractedLink link = links.getFirst();
+        try {
+            linkContentService.fetch(link.url()).ifPresent(content ->
+                    aiArticleSummaryService.summarize(content.text()).ifPresent(summary -> {
+                        String title = StringUtils.hasText(content.title()) ? content.title() : summary.title();
+                        MemoryUnit unit = new MemoryUnit(item, MemoryUnitType.ARTICLE,
+                                StringUtils.hasText(title) ? title : "Статья");
+                        unit.setSummary(summary.summary());
+                        unit.setSourceQuote(excerpt(content.text()));
+                        unit.setConfidence(0.6d);
+                        unit.setActionable(false);
+                        LinkedHashSet<String> tags = new LinkedHashSet<>();
+                        tags.add("article");
+                        if (StringUtils.hasText(link.domain())) {
+                            tags.add(link.domain());
+                        }
+                        unit.setTags(tags);
+                        unit.setAiMetadata(Map.of(
+                                "provider", "openai",
+                                "extractor", "article-summary-v1",
+                                "url", link.url()
+                        ));
+                        item.addMemoryUnit(unit);
+                    }));
+        } catch (RuntimeException exception) {
+            log.warn("Article enrichment failed for {}: {}", link.url(), exception.getMessage());
+        }
+    }
+
+    private String excerpt(String text) {
+        if (!StringUtils.hasText(text)) {
+            return text;
+        }
+        return text.length() <= 500 ? text : text.substring(0, 500);
     }
 
     private MemoryUnit fallbackMemoryUnit(InboxItem item, AiClassificationResult classification) {

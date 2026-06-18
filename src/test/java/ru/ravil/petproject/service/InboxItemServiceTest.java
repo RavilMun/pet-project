@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Pageable;
@@ -91,7 +92,9 @@ class InboxItemServiceTest {
                 aiMemoryUnitExtractionService,
                 aiEmbeddingServiceProvider,
                 selfProvider,
-                event -> { }
+                event -> { },
+                Mockito.mock(LinkContentService.class),
+                Mockito.mock(ru.ravil.petproject.ai.AiArticleSummaryService.class)
         );
         lenient().when(selfProvider.getObject()).thenReturn(inboxItemService);
         // Degraded-save flow persists twice (raw capture + AI processing) and reloads the raw item by id.
