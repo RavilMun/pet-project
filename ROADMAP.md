@@ -114,4 +114,5 @@
   - `TelegramVoiceIngestionService.ingest` (`@Async`, гейт `telegram.bot.enabled`) → `getFile`/`downloadFile` → `transcribe` → `InboxItemService.create(request, fileId, "audio/ogg")` с тегом `voice`; `rawText` = транскрипт (или плейсхолдер «Голосовое сообщение»).
   - **Схема:** `inbox_items.image_file_id` → **`media_file_id`** (миграция `015` renameColumn), `media_type` различает image/voice. Аудио на выдаче не дослыается (ценность в транскрипте), но `file_id` хранится.
   - Тесты: `TelegramVoiceIngestionServiceTest` (транскрипт/плейсхолдер/недоступный файл + аргументы create), поллер voice-маршрут, `TelegramMessage` 6-арг.
-  - Отложено: вынос модели в `openai.transcription-model`; `language=ru`-хинт; кап по длительности; `audio`/`video_note`; реальный E2E с живым ботом/ключом.
+  - [x] Кап по длительности: голосовое > 10 мин (`MAX_VOICE_SECONDS=600`) не транскрибируется (защита от стоимости/таймаута), бот отвечает «слишком длинное». Тест `pollRejectsTooLongVoiceWithoutIngesting`.
+  - Отложено (низкая ценность): вынос модели в `openai.transcription-model` (заметный ripple ради смены модели, которая и так whisper-1); `language=ru`-хинт; `audio`/`video_note`; реальный E2E с живым ботом/ключом.

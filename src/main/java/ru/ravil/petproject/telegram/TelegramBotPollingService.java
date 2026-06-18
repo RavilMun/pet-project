@@ -153,6 +153,11 @@ public class TelegramBotPollingService {
 
         TelegramVoice voice = message.voice();
         if (voice != null) {
+            if (voice.duration() != null && voice.duration() > MAX_VOICE_SECONDS) {
+                telegramApiClient.sendMessage(chatId,
+                        "Голосовое длиннее " + (MAX_VOICE_SECONDS / 60) + " мин — не сохранил. Запиши покороче.");
+                return;
+            }
             voiceIngestionService.ingest(chatId, voice.fileId(), message.messageId());
             telegramApiClient.sendMessage(chatId, "Сохранил голосовое, разберу позже.");
             return;
@@ -294,6 +299,7 @@ public class TelegramBotPollingService {
     }
 
     private static final int MAX_RESENT_PHOTOS = 3;
+    private static final int MAX_VOICE_SECONDS = 600;
 
     /** Re-sends the actual photo(s) behind image-backed search hits via {@code sendPhoto(file_id)}. */
     private void resendPhotos(long chatId, List<MemoryUnitResponse> items) {

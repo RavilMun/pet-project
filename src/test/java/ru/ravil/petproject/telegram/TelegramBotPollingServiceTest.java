@@ -121,6 +121,20 @@ class TelegramBotPollingServiceTest {
     }
 
     @Test
+    void pollRejectsTooLongVoiceWithoutIngesting() {
+        TelegramBotPollingService service = service(null);
+        TelegramVoice longVoice = new TelegramVoice("voice_long", "vu", 900, "audio/ogg", 999_999);
+        TelegramUpdate update = new TelegramUpdate(100L,
+                new TelegramMessage(1L, new TelegramChat(42L, "private", "Ravil", "ravil"), null, null, null, longVoice));
+        when(telegramApiClient.getUpdates(0, 20)).thenReturn(List.of(update));
+
+        service.poll();
+
+        verifyNoInteractions(voiceIngestionService);
+        verify(telegramApiClient).sendMessage(42, "Голосовое длиннее 10 мин — не сохранил. Запиши покороче.");
+    }
+
+    @Test
     void pollSavesStatementWithAboutWordInsteadOfSearching() {
         TelegramBotPollingService service = service(null);
         String text = "Вчера вечером читал статью про pgvector и понял, что embeddings лучше использовать вместе с full-text search";
