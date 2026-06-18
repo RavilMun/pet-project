@@ -201,7 +201,12 @@ class TelegramBotPollingServiceTest {
         service.poll();
 
         verifyNoInteractions(inboxItemService);
-        verify(telegramApiClient).sendMessage(42, "Можешь просто писать заметки, ссылки и идеи.\nПримеры:\nнайди кресло\nпокажи последние\nчто я добавлял сегодня");
+        ArgumentCaptor<String> help = ArgumentCaptor.forClass(String.class);
+        verify(telegramApiClient).sendMessage(org.mockito.ArgumentMatchers.eq(42L), help.capture());
+        org.assertj.core.api.Assertions.assertThat(help.getValue())
+                .contains("второй мозг")
+                .contains("закрой задачу")
+                .contains("/tasks");
     }
 
     @Test

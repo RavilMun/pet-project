@@ -273,7 +273,7 @@ public class TelegramBotPollingService {
     private boolean handleIntent(long chatId, String originalText, TelegramIntent intent) {
         return switch (intent.type()) {
             case HELP -> {
-                telegramApiClient.sendMessage(chatId, "Можешь просто писать заметки, ссылки и идеи.\nПримеры:\nнайди кресло\nпокажи последние\nчто я добавлял сегодня");
+                telegramApiClient.sendMessage(chatId, HELP_TEXT);
                 yield true;
             }
             case RECENT -> {
@@ -312,6 +312,18 @@ public class TelegramBotPollingService {
     private static final int MAX_RESENT_PHOTOS = 3;
     private static final int MAX_VOICE_SECONDS = 600;
     private static final String PROCESSING_REACTION = "👀";
+
+    private static final String HELP_TEXT = """
+            Привет! Я твой второй мозг 🧠 Пиши как думаешь — я сам разберу и запомню.
+
+            Что я умею:
+            • Сохранять — заметки, ссылки, фото, голосовые. Просто пришли.
+            • Находить и отвечать — «где я обедал вчера?», «найди кресло», «что добавлял сегодня».
+            • Задачи — «напомни завтра в 18 позвонить врачу», «закрой задачу про интернет», «отложи оплату на 2 часа».
+            • Править память — «забудь про кафе на Невском», «исправь заметку про кресло: собрано».
+            • Добавь «источник» в вопрос — покажу исходную запись.
+
+            Команды-ярлыки (необязательно): /tasks · /done · /snooze · /forget · /edit · /duplicates · /whoami""";
 
     /** Lightweight "in progress" feedback on the user's message; completion 👍/👎 set on the processed event. */
     private void react(long chatId, Long messageId, String emoji) {
