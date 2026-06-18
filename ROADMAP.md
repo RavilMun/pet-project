@@ -51,22 +51,29 @@
 ## Фаза 3 — Качество поиска и ответов (M, итеративно, мерить eval'ом)
 
 - [x] **3.1** Тюнинг-дайлы ранкера вынесены в `SearchRankingProperties` (`search.ranking.*`): vector bonus/penalty, min-relevance/weak-lexical cutoffs, rerank-window, lexical-cutoff ratios. Дефолты = прежним константам (тест-набор зелёный, поведение не изменилось) → теперь можно свипать eval'ом без перекомпиляции. Тонкие per-field веса `score()` пока в коде.
-- [ ] **3.2** Тюнинг reranker'а на реальном eval (окно, порог, модель). **План A/B (после isolated-baseline):**
-  - baseline = текущий isolated-прогон (rerank off).
-  - `OPENAI_RERANK_ENABLED=true` + свип `SEARCH_RERANK_WINDOW` ∈ {10, 20, 30} в `isolated`-режиме, сравнить accuracy с baseline. Каждый прогон сразу копировать в `report-rerank-w<N>-isolated.json` (report.json затирается).
-  - Решение по дефолту: включать rerank только если прирост стабильно > шума судьи; иначе оставить off.
-- [~] **3.3** Морфология вместо `commonPrefixLength` для русского — **код написан, ждёт компиляции + eval-валидации.**
-  - `RussianStemmer` (бездепендентный порт Snowball ru) + unit-тест на эталонные склонения/идемпотентность/защиту коротких слов.
-  - Подключён в `tokenMatchScore` и `anchorMatchesToken` через `stemMatches`, загейчен `search.ranking.stemming-enabled` (default **false** → поведение не меняется, текущие тесты зелёные).
-  - **План валидации:** прогнать eval с `SEARCH_STEMMING_ENABLED=true` (isolated) против baseline; копировать в `report-stemming-isolated.json`. Если стемминг даёт ложные слияния (разные слова с общим стемом) и проседает accuracy — откатить флаг/ужесточить (min stem length, не трогать anchor).
+**Решение (после isolated-baseline 0.9765):** качество поиска/ответов — «достаточно хорошо». Перестаём гоняться за единичными eval-кейсами: правка одного кейса (LLM-синтез/семантика) дорога по времени и токенам при ROI ±1/85 и риске уронить часть из 83 PASS. Приоритет смещаем на структурные фичи (Фаза 4) и инфру дешёвой валидации (Фаза 5.1). Сделанное по качеству оставляем; нижеперечисленное — **запарковано**.
 
-**Разбор isolated-baseline (accuracy 0.9765, 83 PASS / 2 FAIL):** оба фейла — в синтезе/темпоральности, не в токен-матчинге. Отсюда два дефекта:
-- [x] **3.4 Темпоральная точность** — **сделано.** Предикат периода теперь предпочитает `occurred_at`, а `created_at` — только при `occurred_at IS NULL` (`(occurred_at not null and in range) or (occurred_at null and created_at in range)`), во всех 4 запросах (`findBySourceCreatedAtBetween`, `searchAdvancedBetween` ×2, `searchNearestByEmbeddingBetween`). Чинит `long_diary_002`: вчерашнее событие, записанное сегодня, больше не протекает в TODAY через `created_at`. Детерминированный Testcontainers-тест `periodFilterPrefersOccurredAtOverCreatedAt`. ⚠️ Нужен прогон eval для подтверждения отсутствия регрессий (фикс сохраняет «что было в марте» по occurred_at).
-- [ ] **3.5 Recall при морфологическом разрыве на FTS** (дефект A). «на **обед** ходили в Birch» не поднимается на запрос «где **обедал**»: strict `tsquery('russian')` стеммит обед/обедал в разные лексемы, relaxed `обедал:*` не матчит более короткое «обед» (направление префикса), ILIKE тоже мимо → остаётся только вектор, который Birch не вытянул. 3.3-стеммер тут НЕ помогает (работает в `score()` над уже извлечёнными кандидатами). Нужен фикс на слое retrieval: стеммить запрос для relaxed-tsquery / усилить vector-recall для темпоральных запросов / ослабить anchor-фильтр для вектора. Требует точечного прогона кейса с дампом извлечённых юнитов и кандидатов.
+- [x] **3.1** Тюнинг-дайлы ранкера в `SearchRankingProperties` (`search.ranking.*`) — сделано.
+- [x] **3.4 Темпоральная точность** — **сделано.** Предикат периода предпочитает `occurred_at`, `created_at` — только при `occurred_at IS NULL`, во всех 4 запросах. Чинит `long_diary_002`. Тест `periodFilterPrefersOccurredAtOverCreatedAt`. ⚠️ post-3.4 прогон — только на регрессию (если просадка — откатить).
+- [⏸] **3.2 (паркинг)** Свип reranker'а (окно/порог/модель). Низкий ROI: фейлы baseline реранкером надёжно не лечатся; каждый прогон платный. Инфра готова (`openai.rerank-enabled`, `search.ranking.rerank-window`).
+- [⏸] **3.3 (паркинг)** Морфология в `score()` — код есть (`RussianStemmer` + тест), gated-off (`search.ranking.stemming-enabled=false`). Спящая инфра; baseline показал, что токен-матчинг не узкое место → отдельный прогон не жжём.
+- [⏸] **3.5 (паркинг)** Recall при разрыве «обед↔обедал» на FTS — мост чисто векторный, вероятно уже расшит 3.4 (убран заглушавший лексический хит). Вернуться только если post-3.4 покажет, что кейс жив.
+- [⏸] **3.6 (паркинг)** Synthesis-disambiguation (`typo_004`: «где брал» ≠ «смотрел»). Нет дешёвого детерминированного фикса (нет отдельного `PURCHASE`-типа, «брал» лексически не матчит «купил/заказал»); промпт-правка бьёт по всем вопросам и валидируется только шумным LLM-eval. Принципиальный путь — развод `PURCHASE`/`PURCHASE_RESEARCH` на классификации (см. 4.x), не сейчас.
 
 ## Фаза 4 — Жизненный цикл памяти (M)
 
-- [ ] **4.1** Правка/удаление/«забыть»: `/forget`, `/edit`, пометка факта неверным.
+- [ ] **4.1** Правка/удаление/«забыть»: `/forget`, `/edit`. **Дизайн (MVP):**
+  - **Soft-delete, не hard.** «Забыть» = выставить `memory_units.forgotten_at` (TIMESTAMPTZ NULL). Причины: второй мозг → обратимость и аудит; всё равно нужен механизм исключения из поиска; реальное удаление необратимо. Жёсткую чистку забытых (purge-джоба) — отдельно/позже.
+  - **Гранулярность — `MemoryUnit`** (один факт, т.к. поиск над юнитами). «Забыть весь InboxItem» = забыть все его юниты — добавить позже; MVP оперирует юнитом.
+  - **Схема (миграция `014`):** `memory_units.forgotten_at TIMESTAMPTZ NULL` + partial-индекс `where forgotten_at is null` (поиск только по активным). Edit схему не трогает (переиспользует title/summary/sourceQuote + refresh `search_text` + re-embed).
+  - **Repository:** добавить `and unit.forgotten_at is null` во **все** retrieval-запросы: `searchAdvanced(/Between)`, `searchNearestByEmbedding(/Between)`, `findBySourceCreatedAtBetween`, `findAllBySourceCreatedAtDesc`, `findOpenTasks`, `findDueReminders` (забытое не должно всплывать нигде, включая задачи/напоминания). + `markForgotten(id, ts)` / `unforget(id)`.
+  - **Сервис** (`MemoryEditService`): `forget(unitId)` → `forgottenAt=now`; `recall(unitId)` → `forgottenAt=null` (undo); `edit(unitId, text)` → обновить summary/sourceQuote (+ retitle если коротко) → `refreshSearchText` → re-embed через `updateMemoryUnitEmbeddingsIfAvailable`. **Без** повторной полной extraction (MVP).
+  - **Entity:** `MemoryUnit.forgottenAt` + getter/setter.
+  - **Telegram:** per-chat `lastListedMemories: Map<Long, List<MemoryUnitResponse>>`, заполняется при рендере нумерованного списка SEARCH/RECENT/TODAY. `/forget <n>` → резолв n-го из последнего списка чата → soft-forget → «Забыл: <title>». `/edit <n> <текст>` → резолв → edit + re-embed → ack. (`/recall` последнего забытого — nice-to-have, позже.)
+  - **REST:** новый `MemoryUnitController`: `DELETE /api/memory-units/{id}` (soft-forget), `POST /api/memory-units/{id}/recall`, `PATCH /api/memory-units/{id}` (edit text).
+  - **Исключение из поиска/ответов** — целиком за счёт repo-фильтра (`forgotten_at is null`); `MemoryAnswerService` работает над уже извлечёнными → автоматически без забытых.
+  - **Тесты:** repo-интеграция (забытое не в поиске/списках/задачах), сервис (forget/recall/edit + re-embed), бот-команды (резолв по номеру), контроллер.
+  - **Открытые решения:** edit — только текст (MVP) vs повторная extraction (позже); forget юнит vs весь item (MVP — юнит); связь с 3.6 — отдельный `PURCHASE`-тип на классификации можно занести сюда как «правку типа».
 - [ ] **4.2** Дедуп/консолидация близких фактов (офлайн-джоба по эмбеддингам). M–L.
 
 ## Фаза 5 — Наблюдаемость и инфра (S–M, фоном)
